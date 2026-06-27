@@ -55,6 +55,31 @@ The DB has a healthcheck; the API waits for it, applies EF migrations and seeds
 data on startup. First boot pulls the MS SQL image (~1.5 GB) and may take a
 couple of minutes.
 
+### Updating after code changes (important)
+
+`docker compose up` **does not rebuild images when source changes** — it reuses
+the previously built `trustlist-app-web` / `trustlist-app-api` images. After you
+pull new code (e.g. a frontend change), a plain `docker compose up` will keep
+serving the **old** build. Always pass `--build` so the images are rebuilt from
+the current source:
+
+```bash
+docker compose up -d --build          # rebuild everything that changed
+docker compose up -d --build web      # rebuild just the Blazor frontend
+```
+
+To force a clean image (ignore the Docker layer cache):
+
+```bash
+docker compose build --no-cache web && docker compose up -d web
+```
+
+Quick check that the running web container is on the latest build:
+
+```bash
+curl -s http://localhost:5080/ | grep -o 'Keys / WIA'   # present since MAS-691
+```
+
 ### Generating EF Core migrations
 
 Migrations live in `src/Trustlist.Api/Data/Migrations/`. When you generate them
