@@ -101,6 +101,11 @@ await DbSeeder.SeedAsync(app.Services, app.Logger);
 app.UseSwagger();
 app.UseSwaggerUI();
 
+// Make the API docs discoverable: browsing the API root (e.g. http://localhost:8080/)
+// previously returned a bare 404, so users reported "cannot access Swagger" even though
+// the UI was served under /swagger. Redirect the root to the Swagger UI.
+app.MapGet("/", () => Results.Redirect("/swagger"));
+
 app.UseCors(CorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();

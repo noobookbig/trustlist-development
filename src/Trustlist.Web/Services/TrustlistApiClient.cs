@@ -4,7 +4,16 @@ using System.Text.Json.Serialization;
 
 namespace Trustlist.Web.Services;
 
-public record AuthResult(string Token, string Email, DateTimeOffset ExpiresAt);
+// The API serializes responses with a global snake_case naming policy
+// (see Trustlist.Api/Program.cs), so the auth payload arrives as
+// { "token", "email", "expires_at" }. Bind each property explicitly so the
+// expiry actually deserializes — otherwise ExpiresAt stays at its default
+// (0001-01-01), AuthState.IsAuthenticated is always false, and a successful
+// API login looks like a failed one in the UI.
+public record AuthResult(
+    [property: JsonPropertyName("token")] string Token,
+    [property: JsonPropertyName("email")] string Email,
+    [property: JsonPropertyName("expires_at")] DateTimeOffset ExpiresAt);
 
 public record TrustlistEntityModel(
     [property: JsonPropertyName("id")] int Id,
