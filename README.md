@@ -78,6 +78,39 @@ docker run --rm \
 container bind-mounting the directory — no host `sudo` required:
 `docker run --rm -v "$PWD/src/Trustlist.Api/Data:/work" --user 0:0 busybox rm -rf /work/<path>`.)
 
+### Building & testing locally (run as the workspace user)
+
+You can build and test the solution **in place** with the local .NET 8 SDK:
+
+```bash
+cd trustlist-app
+dotnet build Trustlist.sln
+dotnet test  Trustlist.sln
+```
+
+**Always run builds and tests as the same OS user that owns the working tree**
+(the `big`/workspace user here) — never as `root` and never through a
+container that runs `dotnet` as `root`. A containerized build that writes
+`src/**/obj` and `bin/` as `root` leaves those directories **root-owned**, after
+which the workspace user's next `dotnet build` fails at restore with:
+
+```
+Access to the path '.../src/Trustlist.Api/obj/<guid>.tmp' is denied. Permission denied
+```
+
+`bin/` and `obj/` are already gitignored, so they are build artifacts only — if
+ownership ever skews again, delete the offending dirs with a throwaway root
+container (no host `sudo` needed) and rebuild as the workspace user:
+
+```bash
+docker run --rm -v "$PWD/src/Trustlist.Api:/work" --user 0:0 busybox \
+  rm -rf /work/obj /work/bin
+dotnet build Trustlist.sln
+```
+
+If you must build inside a container, pass `--user "$(id -u):$(id -g)"` so the
+artifacts stay user-owned (same rule as the EF tooling above).
+
 ### Ports
 
 | Service | URL | Notes |
