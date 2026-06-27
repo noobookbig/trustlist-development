@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -12,6 +13,12 @@ using Trustlist.Api.Middleware;
 using Trustlist.Api.Signing;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Hold an ephemeral dev-only publisher seed until the logger is wired up. We
+// resolve it lazily in the host-startup phase (after `var app = builder.Build()`
+// runs) so we can log a loud warning through the configured ILogger pipeline.
+string? ephemeralDevPublisherSeedBase64 = null;
+string ephemeralDevPublisherKid = "tl-publisher-dev-ephemeral";
 
 // --- Configuration -------------------------------------------------------
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
@@ -47,23 +54,95 @@ builder.Services.Configure<PublisherSigningOptions>(
     builder.Configuration.GetSection(PublisherSigningOptions.SectionName));
 var publisherOptions = builder.Configuration.GetSection(PublisherSigningOptions.SectionName)
     .Get<PublisherSigningOptions>() ?? new PublisherSigningOptions();
-if (string.IsNullOrWhiteSpace(publisherOptions.PrivateKeySeedBase64))
+
+var seedLooksLikeEnvExamplePlaceholder = publisherOptions.PrivateKeySeedBase64
+    .StartsWith("CHANGE_ME_", StringComparison.Ordinal);
+
+byte[]? existingSeedBytes = null;
+string? existingSeedError = null;
+if (!string.IsNullOrWhiteSpace(publisherOptions.PrivateKeySeedBase64) && !seedLooksLikeEnvExamplePlaceholder)
 {
-    throw new InvalidOperationException(
-        "TrustlistPublisher:PrivateKeySeedBase64 is missing. " +
-        "Set TRUSTLIST_PUBLISHER_PRIVATE_KEY (32-byte base64-encoded Ed25519 seed) in .env. " +
-        "Generate with: openssl rand -base64 32");
+    try
+    {
+        existingSeedBytes = Convert.FromBase64String(publisherOptions.PrivateKeySeedBase64);
+        if (existingSeedBytes.Length != 32)
+        {
+            existingSeedError =
+                $"TrustlistPublisher:PrivateKeySeedBase64 must decode to exactly 32 bytes (Ed25519 seed). Got {existingSeedBytes.Length}.";
+            existingSeedBytes = null;
+        }
+    }
+    catch (FormatException ex)
+    {
+        existingSeedError = "TrustlistPublisher:PrivateKeySeedBase64 is not valid base64. " + ex.Message;
+    }
 }
-if (string.IsNullOrWhiteSpace(publisherOptions.Kid))
+
+if (existingSeedBytes is null && existingSeedError is not null)
+{
+    // Seed was provided but is malformed. Production/Staging/Testing fail
+    // closed; Development regenerates a fresh ephemeral key so the dev loop
+    // does not require manual intervention.
+    if (!builder.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(existingSeedError);
+    }
+    var seedBytes = new byte[32];
+    RandomNumberGenerator.Fill(seedBytes);
+    ephemeralDevPublisherSeedBase64 = Convert.ToBase64String(seedBytes);
+    publisherOptions.PrivateKeySeedBase64 = ephemeralDevPublisherSeedBase64;
+}
+else if (existingSeedBytes is null)
+{
+    // No usable seed (missing, empty, or the .env.example placeholder).
+    //
+    // MAS-718: dev-mode auto-gen so a clean `dotnet run` / `docker compose up`
+    // works out of the box without requiring a real `.env` first. The
+    // placeholder ("CHANGE_ME_...") from `.env.example` is treated as "missing"
+    // here — copying the example to `.env` and running compose should just
+    // work, not fail with a stack trace.
+    //
+    // Production / Staging / Testing are unchanged: a real TL signing key is a
+    // hard deployment prerequisite (one-way-door — see ARCHITECTURE.md §7) and
+    // the API refuses to boot so a misconfigured prod can't publish under an
+    // ephemeral key.
+    if (!builder.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "TrustlistPublisher:PrivateKeySeedBase64 is missing. " +
+            "Set TRUSTLIST_PUBLISHER_PRIVATE_KEY (32-byte base64-encoded Ed25519 seed) in .env. " +
+            "Generate with: openssl rand -base64 32");
+    }
+
+    var seedBytes = new byte[32];
+    RandomNumberGenerator.Fill(seedBytes);
+    ephemeralDevPublisherSeedBase64 = Convert.ToBase64String(seedBytes);
+    publisherOptions.PrivateKeySeedBase64 = ephemeralDevPublisherSeedBase64;
+}
+else if (string.IsNullOrWhiteSpace(publisherOptions.Kid))
 {
     throw new InvalidOperationException(
         "TrustlistPublisher:Kid is missing. " +
         "Set TRUSTLIST_PUBLISHER_KID (e.g. 'tl-publisher-2026-q2') in .env.");
 }
+
+if (ephemeralDevPublisherSeedBase64 is not null && string.IsNullOrWhiteSpace(publisherOptions.Kid))
+{
+    publisherOptions.Kid = ephemeralDevPublisherKid;
+}
+
 builder.Services.AddSingleton(sp =>
     sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PublisherSigningOptions>>().Value);
-builder.Services.AddSingleton<TLPublisherSigner>(sp =>
-    new TLPublisherSigner(sp.GetRequiredService<PublisherSigningOptions>()));
+// Construct the signer directly with the dev-mode seed when present, so the
+// value path is unambiguous regardless of IOptions / PostConfigure ordering.
+builder.Services.AddSingleton<TLPublisherSigner>(_ =>
+    new TLPublisherSigner(new PublisherSigningOptions
+    {
+        PrivateKeySeedBase64 = ephemeralDevPublisherSeedBase64 ?? publisherOptions.PrivateKeySeedBase64,
+        Kid = ephemeralDevPublisherSeedBase64 is not null && string.IsNullOrWhiteSpace(publisherOptions.Kid)
+            ? ephemeralDevPublisherKid
+            : publisherOptions.Kid,
+    }));
 
 // --- Database + Identity --------------------------------------------------
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(connectionString));
@@ -123,6 +202,23 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+if (ephemeralDevPublisherSeedBase64 is not null)
+{
+    // MAS-718: surface a loud, unmissable warning so dev never mistakes an
+    // ephemeral key for a real TL publisher identity. Also pin the kid so the
+    // JWKS advertises a recognizable value, not the empty one from
+    // appsettings.json.
+    app.Logger.LogWarning(
+        "MAS-718: TRUSTLIST_PUBLISHER_PRIVATE_KEY is missing or set to the " +
+        ".env.example placeholder. Generating an EPHEMERAL dev-only Ed25519 " +
+        "seed at startup (kid={Kid}). This key is regenerated on every " +
+        "restart, so /v1/{{role}} signatures and /.well-known/trustlist-jwks.json " +
+        "will not survive a process bounce. NEVER deploy this code path to a " +
+        "shared or production environment — set TRUSTLIST_PUBLISHER_PRIVATE_KEY " +
+        "(openssl rand -base64 32) and TRUSTLIST_PUBLISHER_KID in .env.",
+        publisherOptions.Kid);
+}
 
 // --- Migrate + seed on startup -------------------------------------------
 // In production (and the default docker compose flow) we migrate + seed. In

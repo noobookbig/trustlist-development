@@ -42,12 +42,24 @@ cp .env.example .env
 sed -i "s|^MSSQL_SA_PASSWORD=.*|MSSQL_SA_PASSWORD=$(openssl rand -base64 24)|"   .env
 sed -i "s|^JWT_SIGNING_KEY=.*|JWT_SIGNING_KEY=$(openssl rand -base64 48)|"       .env
 
+# MAS-718: the TL publisher key is OPTIONAL in dev — `docker compose` defaults
+# ASPNETCORE_ENVIRONMENT to Development and the API auto-generates an
+# ephemeral Ed25519 seed when this var is missing or still set to the
+# `.env.example` placeholder. The API logs a loud warning at startup. For a
+# stable kid / JWKS across restarts, set a real seed here:
+#   sed -i "s|^TRUSTLIST_PUBLISHER_PRIVATE_KEY=.*|TRUSTLIST_PUBLISHER_PRIVATE_KEY=$(openssl rand -base64 32)|" .env
+
 docker compose up -d --build
 ```
 
 `docker compose` will refuse to start if `MSSQL_SA_PASSWORD` or
 `JWT_SIGNING_KEY` are missing, and the API will fail-closed at boot if the
-JWT key is shorter than 32 bytes or the DB connection string is empty.
+JWT key is shorter than 32 bytes or the DB connection string is empty. The
+TL publisher key is enforced only when `ASPNETCORE_ENVIRONMENT=Production`
+(override `TRUSTLIST_ASPNETCORE_ENVIRONMENT=Production` in `.env` for prod-like
+runs); under `Development` a missing or placeholder
+`TRUSTLIST_PUBLISHER_PRIVATE_KEY` triggers an ephemeral dev-only key with a
+logged warning.
 
 `.env` is gitignored — never commit real secrets.
 
@@ -336,9 +348,14 @@ Verification recipe:
 The TL publisher key is held by the TL Authority operator. Locally it is
 provisioned via the `TRUSTLIST_PUBLISHER_PRIVATE_KEY` env var (32-byte
 base64-encoded Ed25519 seed; `openssl rand -base64 32`); the matching `kid`
-is `TRUSTLIST_PUBLISHER_KID`. The API **fails closed at boot** when either is
-missing or the seed is not exactly 32 bytes — same fail-closed pattern as
-`JWT_SIGNING_KEY`.
+is `TRUSTLIST_PUBLISHER_KID`. Under `ASPNETCORE_ENVIRONMENT=Production` the
+API **fails closed at boot** when either is missing or the seed is not
+exactly 32 bytes — same fail-closed pattern as `JWT_SIGNING_KEY`. Under
+`Development` (the default for `docker compose`) a missing or
+`.env.example`-placeholder value triggers an ephemeral auto-generated seed
+plus a loud `LogWarning` at startup, so a fresh checkout boots end-to-end
+without manual key generation. Override to a real seed + `kid` once the
+JWKS needs to be stable across restarts.
 
 **Rotation procedure** (no downtime):
 
