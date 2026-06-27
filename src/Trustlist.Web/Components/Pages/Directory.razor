@@ -2,8 +2,13 @@
 @rendermode InteractiveServer
 @inject TrustlistApiClient Api
 
-<h1>Trust List Directory</h1>
-<p class="subtitle">Registered Issuers, Verifiers and Wallet Providers in the Thai VC ecosystem.</p>
+<section class="hero" role="img" aria-label="Ray-traced neon spheres representing the Thai verifiable-credential trust network">
+    <div class="hero-body">
+        <span class="hero-eyebrow">Verifiable Credentials · Thailand</span>
+        <h1>Trust List Directory</h1>
+        <p class="subtitle">Registered Issuers, Verifiers and Wallet Providers in the Thai VC ecosystem.</p>
+    </div>
+</section>
 
 <div class="filters">
     <select @bind="role" @bind:after="Reload">
@@ -38,7 +43,7 @@ else if (entities.Count == 0)
 }
 else
 {
-    <table class="grid">
+    <table class="grid cards">
         <thead>
             <tr>
                 <th>Role</th>
@@ -56,15 +61,15 @@ else
             @foreach (var e in entities)
             {
                 <tr>
-                    <td><span class="badge role-@e.Role.ToLower()">@e.Role</span></td>
-                    <td>@e.EntityName</td>
-                    <td class="mono">@e.EntityId</td>
-                    <td>@e.Jurisdiction</td>
-                    <td><span class="badge status-@e.Status.ToLower()">@e.Status</span></td>
-                    <td class="mono small">@e.Scope</td>
-                    <td class="small">@KeySummary(e)</td>
-                    <td>@(e.NextUpdate?.ToString("yyyy-MM-dd") ?? "-")</td>
-                    <td>
+                    <td data-label="Role"><span class="badge role-@e.Role.ToLower()">@e.Role</span></td>
+                    <td data-label="Name">@e.EntityName</td>
+                    <td data-label="Entity ID" class="mono">@e.EntityId</td>
+                    <td data-label="Jurisdiction">@e.Jurisdiction</td>
+                    <td data-label="Status"><span class="badge status-@e.Status.ToLower()">@e.Status</span></td>
+                    <td data-label="Scope" class="mono small">@e.Scope</td>
+                    <td data-label="Keys / WIA" class="small">@KeySummary(e)</td>
+                    <td data-label="Next update">@(e.NextUpdate?.ToString("yyyy-MM-dd") ?? "-")</td>
+                    <td data-label="">
                         @if (HasKeyMaterial(e))
                         {
                             <button class="link-btn" @onclick="() => ToggleDetails(e.Id)">

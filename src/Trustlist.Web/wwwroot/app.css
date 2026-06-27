@@ -64,7 +64,9 @@
     --text-base: 0.95rem;
     --text-md: 1.05rem;
     --text-lg: 1.3rem;
-    --text-xl: 1.75rem;
+    /* fluid page title — scales smoothly across phone → desktop */
+    --text-xl: clamp(1.5rem, 1.15rem + 1.6vw, 1.95rem);
+    --text-2xl: clamp(1.85rem, 1.3rem + 2.6vw, 2.6rem);
     --weight-regular: 400;
     --weight-medium: 600;
     --weight-bold: 700;
@@ -99,6 +101,12 @@
     --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
     --dur-fast: 130ms;
     --dur: 190ms;
+
+    /* ---- Layout / responsive ---- */
+    --content-max: 1140px;
+    --gutter: clamp(1rem, 0.5rem + 3vw, 2rem);   /* adaptive page inset */
+    --ray-hero: url("img/neon-hero.png");        /* ray-traced banner asset */
+    --ray-badge: url("img/neon-badge.png");      /* ray-traced brand emblem */
 }
 
 * { box-sizing: border-box; }
@@ -136,7 +144,7 @@ a:hover { color: var(--neon-strong); text-decoration: none; }
 .topbar {
     display: flex; justify-content: space-between; align-items: center;
     gap: var(--space-4);
-    padding: var(--space-3) var(--space-5);
+    padding: var(--space-3) var(--gutter);
     background: rgba(10, 16, 32, 0.72);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
@@ -153,6 +161,13 @@ a:hover { color: var(--neon-strong); text-decoration: none; }
     color: var(--ink); letter-spacing: 0.01em;
     display: inline-flex; align-items: center; gap: var(--space-2);
 }
+/* ray-traced brand emblem (decorative) injected without markup change */
+.brand a::before {
+    content: ""; flex: none;
+    width: 1.5rem; height: 1.5rem; border-radius: var(--radius-sm);
+    background: var(--ray-badge) center/cover no-repeat, var(--surface-3);
+    box-shadow: 0 0 0 1px var(--line), var(--glow-cyan-soft);
+}
 .brand a:hover { color: var(--ink); text-shadow: var(--glow-cyan-soft); }
 
 .nav { display: flex; align-items: center; gap: var(--space-4); }
@@ -166,7 +181,7 @@ a:hover { color: var(--neon-strong); text-decoration: none; }
     padding-left: var(--space-4); border-left: 1px solid var(--line);
 }
 
-.content { flex: 1; max-width: 1140px; width: 100%; margin: 0 auto; padding: var(--space-6) var(--space-5); }
+.content { flex: 1; max-width: var(--content-max); width: 100%; margin: 0 auto; padding: var(--space-6) var(--gutter); }
 .footer {
     text-align: center; padding: var(--space-5);
     color: var(--muted); font-size: var(--text-xs); letter-spacing: 0.02em;
@@ -181,6 +196,56 @@ h1 {
     -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .subtitle { color: var(--muted); margin-top: 0; margin-bottom: var(--space-5); font-size: var(--text-base); }
+
+/* ---------------- Ray-traced hero ----------------
+   Real ray-traced PNG (wwwroot/img/neon-hero.png) as a banner behind the
+   page intro. A dark left→right scrim keeps text WCAG-legible over the
+   image regardless of where bright spheres land. Used by Directory + Login.
+*/
+.hero {
+    position: relative; isolation: isolate;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-card);
+    margin-bottom: var(--space-6);
+    background:
+        linear-gradient(90deg, rgba(7, 11, 22, 0.92) 0%, rgba(7, 11, 22, 0.66) 42%, rgba(7, 11, 22, 0.30) 100%),
+        var(--ray-hero) center 38% / cover no-repeat,
+        var(--surface);
+    /* fluid, content-driven height — taller on wide screens */
+    min-height: clamp(150px, 12rem + 6vw, 280px);
+    display: flex; align-items: center;
+}
+.hero::after {
+    /* thin neon base rule echoing the chrome */
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+    background: linear-gradient(90deg, var(--neon), var(--magenta), transparent);
+    opacity: 0.7;
+}
+.hero-body { padding: var(--space-6) var(--gutter); max-width: 60ch; }
+.hero h1 { font-size: var(--text-2xl); margin-bottom: var(--space-3); }
+.hero .subtitle { margin-bottom: 0; color: var(--ink-soft); }
+.hero-eyebrow {
+    display: inline-block; margin-bottom: var(--space-3);
+    font-size: var(--text-xs); font-weight: var(--weight-medium);
+    text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--neon-strong);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid rgba(45, 226, 255, 0.35); border-radius: var(--radius-pill);
+    background: var(--tint-cyan-bg);
+}
+
+/* Auth hero — centers the sign-in card over the ray-traced backdrop */
+.auth-hero {
+    min-height: clamp(420px, 60vh, 640px);
+    align-items: stretch;
+}
+.auth-hero .hero-body {
+    max-width: none; width: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: var(--space-2); text-align: center;
+}
 
 /* ---------------- Filters ---------------- */
 .filters { display: flex; gap: var(--space-3); margin: var(--space-4) 0 var(--space-5); flex-wrap: wrap; }
@@ -270,9 +335,11 @@ dl.kv dd { margin: 0; color: var(--ink-soft); }
     box-shadow: var(--shadow-card);
 }
 .auth-card {
-    max-width: 420px; margin: var(--space-6) auto 0;
+    width: 100%; max-width: 420px; margin: 0 auto;
     display: flex; flex-direction: column; gap: var(--space-4);
-    position: relative; overflow: hidden;
+    position: relative; overflow: hidden; text-align: left;
+    /* lift the card off the ray-traced backdrop */
+    box-shadow: var(--shadow-pop);
 }
 .auth-card::before {
     /* neon top edge — visceral trust cue on the sign-in surface */
@@ -380,15 +447,76 @@ code {
     body { background-attachment: scroll; }
 }
 
-/* ---------------- Mobile ---------------- */
+/* ================================================================
+   Responsive system
+   ----------------------------------------------------------------
+   Content-driven breakpoints:
+     • >900px  desktop (default)
+     • ≤900px  tablet  — looser chrome, single-column forms
+     • ≤640px  mobile  — directory table becomes stacked cards
+   ================================================================ */
+
+/* ---- Tablet ---- */
+@media (max-width: 900px) {
+    .form-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .hero-body { max-width: 52ch; }
+    /* below tablet the wide grid scrolls horizontally with an affordance */
+    .grid:not(.cards) { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .grid:not(.cards) > thead, .grid:not(.cards) > tbody { white-space: nowrap; }
+}
+
+/* ---- Mobile ---- */
 @media (max-width: 640px) {
     .topbar { padding: var(--space-3) var(--space-4); }
-    .content { padding: var(--space-5) var(--space-4); }
     .nav { gap: var(--space-3); }
-    .nav .user { display: none; }       /* keep chrome uncluttered on small screens */
-    .filters input { min-width: 0; width: 100%; }
-    .filters { gap: var(--space-2); }
-    /* horizontal scroll affordance for the wide data grid */
-    .grid { display: block; overflow-x: auto; white-space: nowrap; }
-    h1 { font-size: var(--text-lg); }
+    .nav .user { display: none; }        /* keep chrome uncluttered on small screens */
+    .filters { gap: var(--space-2); flex-direction: column; align-items: stretch; }
+    .filters select, .filters input { width: 100%; min-width: 0; }
+    .hero { min-height: clamp(140px, 30vw, 220px); }
+    .auth-hero { min-height: clamp(380px, 70vh, 560px); }
+    .form-grid { grid-template-columns: 1fr; }   /* single-column forms (forms need room) */
+    .detail-row > td { padding: var(--space-4); }
+
+    /* ---- Directory grid → stacked cards ----
+       Each <tr> becomes a card; each <td> a labelled row driven by the
+       data-label attribute on the cell. Recognition-over-recall: the
+       column header travels with the value so nothing is decoded from
+       position. Markup adds data-label only (no behaviour change). */
+    table.grid.cards { border: none; background: transparent; box-shadow: none; overflow: visible; }
+    table.grid.cards > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    table.grid.cards > tbody > tr {
+        display: block; background: var(--surface);
+        border: 1px solid var(--line); border-radius: var(--radius-md);
+        box-shadow: var(--shadow-card);
+        padding: var(--space-2) var(--space-4);
+        margin-bottom: var(--space-4);
+    }
+    table.grid.cards > tbody > tr:hover > td { background: transparent; }
+    table.grid.cards > tbody > tr > td {
+        display: flex; gap: var(--space-4); align-items: baseline;
+        justify-content: space-between;
+        padding: var(--space-2) 0; border-bottom: 1px solid var(--line-soft);
+        white-space: normal; text-align: right;
+    }
+    table.grid.cards > tbody > tr > td:last-child { border-bottom: none; }
+    table.grid.cards > tbody > tr > td::before {
+        content: attr(data-label);
+        flex: none; text-align: left;
+        color: var(--muted); font-size: var(--text-xs);
+        font-weight: var(--weight-medium); text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    /* cells with empty data-label (the actions cell) span full width */
+    table.grid.cards > tbody > tr > td[data-label=""]::before { display: none; }
+    table.grid.cards > tbody > tr > td[data-label=""] { justify-content: flex-end; }
+
+    /* the expandable detail row spans the full card, no label gutter */
+    table.grid.cards > tbody > tr.detail-row { padding: 0; }
+    table.grid.cards > tbody > tr.detail-row > td {
+        display: block; text-align: left; border-bottom: none;
+        box-shadow: inset 3px 0 0 var(--neon);
+    }
+    table.grid.cards > tbody > tr.detail-row > td::before { content: none; }
+    /* nested sub-grids inside the detail card stay scrollable */
+    .sub-grid { display: block; overflow-x: auto; white-space: nowrap; }
 }
