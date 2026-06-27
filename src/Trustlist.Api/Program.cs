@@ -8,6 +8,8 @@ using Microsoft.IdentityModel.Tokens;
 using Trustlist.Api.Auth;
 using Trustlist.Api.Data;
 using Trustlist.Api.Dtos;
+using Trustlist.Api.Middleware;
+using Trustlist.Api.Signing;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +37,33 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "ConnectionStrings:Default is missing. " +
         "Set ConnectionStrings__Default (or MSSQL_SA_PASSWORD for docker compose) in the environment.");
 }
+
+// --- Trustlist publisher signing key (MAS-696) ------------------------------
+// Fail-closed at boot when the publisher key is missing — mirrors the JWT key
+// pattern above. The publisher signs every /v1/{role}/... response in JWS-compact
+// form (RFC 7515 + RFC 8032 Ed25519), so a missing key means the entire public
+// directory surface is unverifiable and must not be served.
+builder.Services.Configure<PublisherSigningOptions>(
+    builder.Configuration.GetSection(PublisherSigningOptions.SectionName));
+var publisherOptions = builder.Configuration.GetSection(PublisherSigningOptions.SectionName)
+    .Get<PublisherSigningOptions>() ?? new PublisherSigningOptions();
+if (string.IsNullOrWhiteSpace(publisherOptions.PrivateKeySeedBase64))
+{
+    throw new InvalidOperationException(
+        "TrustlistPublisher:PrivateKeySeedBase64 is missing. " +
+        "Set TRUSTLIST_PUBLISHER_PRIVATE_KEY (32-byte base64-encoded Ed25519 seed) in .env. " +
+        "Generate with: openssl rand -base64 32");
+}
+if (string.IsNullOrWhiteSpace(publisherOptions.Kid))
+{
+    throw new InvalidOperationException(
+        "TrustlistPublisher:Kid is missing. " +
+        "Set TRUSTLIST_PUBLISHER_KID (e.g. 'tl-publisher-2026-q2') in .env.");
+}
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PublisherSigningOptions>>().Value);
+builder.Services.AddSingleton<TLPublisherSigner>(sp =>
+    new TLPublisherSigner(sp.GetRequiredService<PublisherSigningOptions>()));
 
 // --- Database + Identity --------------------------------------------------
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(connectionString));
@@ -96,7 +125,17 @@ builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 // --- Migrate + seed on startup -------------------------------------------
-await DbSeeder.SeedAsync(app.Services, app.Logger);
+// In production (and the default docker compose flow) we migrate + seed. In
+// tests we set TRUSTLIST_SKIP_SEEDER=1 so the WebApplicationFactory does not
+// try to talk to a real SQL Server; the test fixture injects the in-memory
+// provider via ConfigureTestServices and seeds its own entities.
+if (!string.Equals(
+        Environment.GetEnvironmentVariable("TRUSTLIST_SKIP_SEEDER"),
+        "1",
+        StringComparison.Ordinal))
+{
+    await DbSeeder.SeedAsync(app.Services, app.Logger);
+}
 
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -110,7 +149,21 @@ app.UseCors(CorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Sign /v1/{role}/... responses in JWS-compact form (MAS-696). The middleware
+// reads the raw JSON bytes the controller wrote, signs them, and replaces the
+// response body with `header.payload.signature`. Health, JWKS, Swagger and the
+// admin /api/* surfaces are explicitly excluded so they remain inspectable.
+app.UseMiddleware<JwsResponseMiddleware>();
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "trustlist-api" }));
+
+// RFC 7517 JWKS — publishes the TL publisher's public key so Issuers / Wallets /
+// Verifiers can verify signed /v1/{role}/... responses without an out-of-band
+// trust anchor. Clients MUST cache for 24h per the v0 spec caching rule.
+app.MapGet("/.well-known/trustlist-jwks.json", (TLPublisherSigner signer) => Results.Json(
+    new { keys = new[] { signer.PublicJwk } },
+    contentType: "application/json"));
+
 app.MapControllers();
 
 app.Run();

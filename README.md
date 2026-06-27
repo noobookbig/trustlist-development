@@ -277,14 +277,78 @@ The directory's wire format follows
 - HTTPS/TLS termination, refresh tokens, role-based authorization, and the
   full W3C VC / OpenID4VCI credential flows are out of scope for this first
   local cut and tracked as child issues of `MAS-673`.
-- **Signed directory response (JWS-compact)** is deferred — the directory
-  currently returns plain JSON. When ETDA publisher signing keys are
-  available, the response will be wrapped in a JWS per
-  `SignedRoleRecord` in the OpenAPI yaml. Key custody is a one-way door;
-  needs CTO + SecurityEngineer sign-off before code lands.
+- **Signed directory response (JWS-compact)** — implemented per `MAS-696`. See
+  [Signed Responses](#signed-responses-mas-696) below for format, JWKS URL,
+  and the rotation procedure. Local key custody is the dev env only; a real
+  deploy sources the seed from a KMS / HSM and never has it on disk.
 - **Token Status List endpoint server** — the directory stores the *URI* of
   each issuer's status list endpoint. The actual TSL bitstring service is a
   separate component.
 ```bash
 docker compose down -v   # stop and wipe the DB volume
 ```
+
+## Signed Responses (MAS-696)
+
+Every successful read on the public, read-only role-keyed directory surface
+(`/v1/issuers/...`, `/v1/wallet-providers/...`, `/v1/verifiers/...`) is wrapped
+in **JWS-compact form** per RFC 7515:
+
+```
+base64url(header).base64url(payload).base64url(signature)
+```
+
+where:
+
+| Field      | Value |
+|------------|-------|
+| `header`   | `{"alg":"EdDSA","kid":"<kid>","typ":"trustlist-role-record+jwt","cty":"application/json"}` |
+| `payload`  | the exact snake_case JSON the controller returned (status, list, single record, etc.) |
+| `signature`| Ed25519 (RFC 8032) over ASCII(`header` + "." + `payload`) |
+
+The signed response is served as `Content-Type: application/jwt`. Error
+responses (4xx / 5xx) are returned unwrapped so the existing error shape keeps
+working.
+
+### Verifying a signed response
+
+The client only needs the TL publisher's public key, fetched from:
+
+```
+GET /.well-known/trustlist-jwks.json   →  { "keys": [ { "kty":"OKP", "crv":"Ed25519", "kid":"...", "x":"...", "alg":"EdDSA", "use":"sig" } ] }
+```
+
+Clients **MUST** cache the JWKS for **24 hours** per the v0 spec caching rule
+(see `docs/trustlist-spec.md` §TL cache). After 24 hours, refetch and retry —
+this is the same window publishers can use to rotate keys without a hard cut.
+
+Verification recipe:
+
+1. Fetch the JWKS document; cache 24h.
+2. Receive `application/jwt` on the directory endpoint.
+3. Split the body on `.`; decode `header` and look up `header.kid` in the JWKS.
+4. Verify the Ed25519 signature over ASCII(`header` + "." + `payload`) using
+   `jwks.keys[0].x`.
+5. base64url-decode `payload` to obtain the JSON record.
+
+### Key custody and rotation (one-way door)
+
+The TL publisher key is held by the TL Authority operator. Locally it is
+provisioned via the `TRUSTLIST_PUBLISHER_PRIVATE_KEY` env var (32-byte
+base64-encoded Ed25519 seed; `openssl rand -base64 32`); the matching `kid`
+is `TRUSTLIST_PUBLISHER_KID`. The API **fails closed at boot** when either is
+missing or the seed is not exactly 32 bytes — same fail-closed pattern as
+`JWT_SIGNING_KEY`.
+
+**Rotation procedure** (no downtime):
+
+1. Generate a new seed (`openssl rand -base64 32`); assign a new `kid` (e.g.
+   `tl-publisher-2026-q3`).
+2. Publish the **new** public key in the JWKS alongside the old one (two
+   entries in `keys[]`).
+3. Set `TRUSTLIST_PUBLISHER_PRIVATE_KEY` and `TRUSTLIST_PUBLISHER_KID` to the
+   new values; restart the API.
+4. Wait at least one JWKS-TTL window (24h) for clients to refresh.
+5. Drop the old public key from the JWKS.
+
+This is the same model the v0 spec describes for TL publisher rollovers.

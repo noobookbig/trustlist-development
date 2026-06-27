@@ -31,6 +31,10 @@ services:
       Jwt__Issuer: ${JWT_ISSUER:-trustlist-api}
       Jwt__Audience: ${JWT_AUDIENCE:-trustlist-web}
       Jwt__ExpiryMinutes: ${JWT_EXPIRY_MINUTES:-120}
+      # MAS-696 — fail-closed at boot when missing; see .env.example for the
+      # openssl generation hint.
+      TrustlistPublisher__PrivateKeySeedBase64: ${TRUSTLIST_PUBLISHER_PRIVATE_KEY:?TRUSTLIST_PUBLISHER_PRIVATE_KEY must be set (32-byte base64 Ed25519 seed, see .env.example)}
+      TrustlistPublisher__Kid: ${TRUSTLIST_PUBLISHER_KID:-tl-publisher-local}
     ports:
       - "8080:8080"
     depends_on:

@@ -7,4 +7,10 @@
     <RootNamespace>Trustlist.Web</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- MAS-696 — Ed25519 JWS verifier for /v1/{role}/... signed responses.
+         Same BouncyCastle dependency rationale as the API project. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+  </ItemGroup>
+
 </Project>
