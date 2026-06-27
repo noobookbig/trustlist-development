@@ -1,0 +1,158 @@
+@page "/manage"
+@rendermode InteractiveServer
+@inject TrustlistApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<h1>Manage Trust List</h1>
+
+@if (!Auth.IsAuthenticated)
+{
+    <p class="error">You must <a href="/login">login</a> to manage entities.</p>
+}
+else
+{
+    <div class="card">
+        <h2>Add entity</h2>
+        <div class="form-grid">
+            <label>Role
+                <select @bind="newEntity.Role">
+                    <option value="Issuer">Issuer</option>
+                    <option value="Verifier">Verifier</option>
+                    <option value="WalletProvider">Wallet Provider</option>
+                </select>
+            </label>
+            <label>Status
+                <select @bind="newEntity.Status">
+                    <option value="Valid">Valid</option>
+                    <option value="Suspended">Suspended</option>
+                    <option value="Withdrawn">Withdrawn</option>
+                    <option value="Applied">Applied</option>
+                    <option value="Vetted">Vetted</option>
+                    <option value="Expired">Expired</option>
+                </select>
+            </label>
+            <label>Entity ID (https URL)
+                <input @bind="newEntity.EntityId" placeholder="https://issuer.example.go.th" />
+            </label>
+            <label>Name
+                <input @bind="newEntity.EntityName" placeholder="Display name" />
+            </label>
+            <label>Legal name
+                <input @bind="newEntity.EntityLegalName" />
+            </label>
+            <label>Jurisdiction
+                <input @bind="newEntity.Jurisdiction" maxlength="2" placeholder="TH" />
+            </label>
+            <label>Registration #
+                <input @bind="newEntity.RegistrationNumber" />
+            </label>
+            <label>Scope
+                <input @bind="newEntity.Scope" placeholder="UniversityDegreeCredential" />
+            </label>
+            <label>Security email
+                <input @bind="newEntity.SecurityEmail" />
+            </label>
+        </div>
+        @if (createError is not null)
+        {
+            <p class="error">@createError</p>
+        }
+        <button class="primary" @onclick="Create" disabled="@busy">Add entity</button>
+    </div>
+
+    <h2>Existing entities</h2>
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+    <table class="grid">
+        <thead>
+            <tr><th>Role</th><th>Name</th><th>Entity ID</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var e in entities)
+            {
+                <tr>
+                    <td>@e.Role</td>
+                    <td>@e.EntityName</td>
+                    <td class="mono">@e.EntityId</td>
+                    <td>@e.Status</td>
+                    <td><button class="danger" @onclick="() => Delete(e.Id)">Delete</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TrustlistEntityModel> entities = [];
+    private string? error;
+    private string? createError;
+    private bool busy;
+
+    private CreateForm newEntity = new();
+
+    private class CreateForm
+    {
+        public string Role { get; set; } = "Issuer";
+        public string Status { get; set; } = "Valid";
+        public string EntityId { get; set; } = "";
+        public string EntityName { get; set; } = "";
+        public string? EntityLegalName { get; set; }
+        public string Jurisdiction { get; set; } = "TH";
+        public string? RegistrationNumber { get; set; }
+        public string? Scope { get; set; }
+        public string? SecurityEmail { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Auth.IsAuthenticated) await Reload();
+    }
+
+    private async Task Reload()
+    {
+        try { entities = await Api.ListAsync(); error = null; }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task Create()
+    {
+        createError = null;
+        busy = true;
+        try
+        {
+            var model = new CreateEntityModel(
+                newEntity.Role, newEntity.EntityId, newEntity.EntityName,
+                newEntity.EntityLegalName, newEntity.Jurisdiction, newEntity.RegistrationNumber,
+                newEntity.Status, null, null, newEntity.Scope, newEntity.SecurityEmail, null);
+
+            var (ok, err) = await Api.CreateAsync(model, Auth.Token!);
+            if (ok)
+            {
+                newEntity = new CreateForm();
+                await Reload();
+            }
+            else
+            {
+                createError = err;
+            }
+        }
+        catch (Exception ex)
+        {
+            createError = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task Delete(int id)
+    {
+        var (ok, err) = await Api.DeleteAsync(id, Auth.Token!);
+        if (ok) await Reload();
+        else error = err;
+    }
+}

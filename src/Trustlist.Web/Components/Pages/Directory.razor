@@ -1,0 +1,102 @@
+@page "/"
+@rendermode InteractiveServer
+@inject TrustlistApiClient Api
+
+<h1>Trust List Directory</h1>
+<p class="subtitle">Registered Issuers, Verifiers and Wallet Providers in the Thai VC ecosystem.</p>
+
+<div class="filters">
+    <select @bind="role" @bind:after="Reload">
+        <option value="">All roles</option>
+        <option value="Issuer">Issuer</option>
+        <option value="Verifier">Verifier</option>
+        <option value="WalletProvider">Wallet Provider</option>
+    </select>
+    <select @bind="status" @bind:after="Reload">
+        <option value="">All statuses</option>
+        <option value="Valid">Valid</option>
+        <option value="Suspended">Suspended</option>
+        <option value="Withdrawn">Withdrawn</option>
+        <option value="Applied">Applied</option>
+        <option value="Vetted">Vetted</option>
+        <option value="Expired">Expired</option>
+    </select>
+    <input placeholder="Search name / entity_id" @bind="search" @bind:after="Reload" />
+</div>
+
+@if (loading)
+{
+    <p>Loading…</p>
+}
+else if (error is not null)
+{
+    <p class="error">Could not load directory: @error</p>
+}
+else if (entities.Count == 0)
+{
+    <p>No entities match the current filters.</p>
+}
+else
+{
+    <table class="grid">
+        <thead>
+            <tr>
+                <th>Role</th>
+                <th>Name</th>
+                <th>Entity ID</th>
+                <th>Jurisdiction</th>
+                <th>Status</th>
+                <th>Scope</th>
+                <th>Next update</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var e in entities)
+            {
+                <tr>
+                    <td><span class="badge role-@e.Role.ToLower()">@e.Role</span></td>
+                    <td>@e.EntityName</td>
+                    <td class="mono">@e.EntityId</td>
+                    <td>@e.Jurisdiction</td>
+                    <td><span class="badge status-@e.Status.ToLower()">@e.Status</span></td>
+                    <td class="mono small">@e.Scope</td>
+                    <td>@(e.NextUpdate?.ToString("yyyy-MM-dd") ?? "-")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <p class="count">@entities.Count entit@(entities.Count == 1 ? "y" : "ies")</p>
+}
+
+@code {
+    private List<TrustlistEntityModel> entities = [];
+    private bool loading = true;
+    private string? error;
+    private string role = "";
+    private string status = "";
+    private string search = "";
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            entities = await Api.ListAsync(
+                string.IsNullOrEmpty(role) ? null : role,
+                string.IsNullOrEmpty(status) ? null : status,
+                string.IsNullOrEmpty(search) ? null : search);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            entities = [];
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+}

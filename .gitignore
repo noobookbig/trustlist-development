@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+.vs/
+
+# Local environment / secrets — never commit real values
+.env
+.env.local
+.env.*.local
+
+# Local docker volumes
+docker-data/

@@ -1,0 +1,47 @@
+@inherits LayoutComponentBase
+@inject AuthState Auth
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="page">
+    <header class="topbar">
+        <div class="brand">
+            <a href="/">🇹🇭 Thailand Trust List</a>
+        </div>
+        <nav class="nav">
+            <a href="/">Directory</a>
+            @if (Auth.IsAuthenticated)
+            {
+                <a href="/manage">Manage</a>
+                <span class="user">@Auth.Email</span>
+                <button class="link-btn" @onclick="SignOut">Sign out</button>
+            }
+            else
+            {
+                <a href="/login">Login</a>
+            }
+        </nav>
+    </header>
+
+    <main class="content">
+        @Body
+    </main>
+
+    <footer class="footer">
+        Trustlist app — C# .NET 8 · local demo · Verifiable Credential Ecosystem In Thailand
+    </footer>
+</div>
+
+@code {
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Nav.NavigateTo("/");
+    }
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+}
