@@ -15,6 +15,23 @@ public record AuthResult(
     [property: JsonPropertyName("email")] string Email,
     [property: JsonPropertyName("expires_at")] DateTimeOffset ExpiresAt);
 
+// Trust anchor (signing key / "pubkey") as exchanged with the API — mirrors
+// openapi-trustlist-directory.yaml §TrustAnchor. Jwk is carried as raw JSON so the
+// admin can paste a JWK without a strongly-typed model.
+public record TrustAnchorModel(
+    [property: JsonPropertyName("kid")] string Kid,
+    [property: JsonPropertyName("format")] string Format,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("not_before")] DateTimeOffset? NotBefore,
+    [property: JsonPropertyName("not_after")] DateTimeOffset? NotAfter,
+    [property: JsonPropertyName("jwk")] System.Text.Json.JsonElement? Jwk,
+    [property: JsonPropertyName("x5c")] string[]? X5c);
+
+// OpenID4VP §5.9 Client Identifier — how a Verifier identifies itself / binds its key.
+public record ClientIdentifierModel(
+    [property: JsonPropertyName("prefix")] string Prefix,
+    [property: JsonPropertyName("value")] string Value);
+
 public record TrustlistEntityModel(
     [property: JsonPropertyName("id")] int Id,
     [property: JsonPropertyName("role")] string Role,
@@ -30,7 +47,12 @@ public record TrustlistEntityModel(
     [property: JsonPropertyName("security_email")] string? SecurityEmail,
     [property: JsonPropertyName("next_update")] DateTimeOffset? NextUpdate,
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
-    [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt);
+    [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
+    [property: JsonPropertyName("trust_anchors")] TrustAnchorModel[]? TrustAnchors,
+    [property: JsonPropertyName("client_identifiers")] ClientIdentifierModel[]? ClientIdentifiers,
+    [property: JsonPropertyName("wia_status_list_uri")] string? WiaStatusListUri,
+    [property: JsonPropertyName("wia_revocation_maintenance_period_days")] int? WiaRevocationMaintenancePeriodDays,
+    [property: JsonPropertyName("wia_attestation_format")] string[]? WiaAttestationFormat);
 
 public record CreateEntityModel(
     [property: JsonPropertyName("role")] string Role,
@@ -44,7 +66,12 @@ public record CreateEntityModel(
     [property: JsonPropertyName("certificate_id")] string? CertificateId,
     [property: JsonPropertyName("scope")] string? Scope,
     [property: JsonPropertyName("security_email")] string? SecurityEmail,
-    [property: JsonPropertyName("next_update")] DateTimeOffset? NextUpdate);
+    [property: JsonPropertyName("next_update")] DateTimeOffset? NextUpdate,
+    [property: JsonPropertyName("trust_anchors")] TrustAnchorModel[]? TrustAnchors = null,
+    [property: JsonPropertyName("client_identifiers")] ClientIdentifierModel[]? ClientIdentifiers = null,
+    [property: JsonPropertyName("wia_status_list_uri")] string? WiaStatusListUri = null,
+    [property: JsonPropertyName("wia_revocation_maintenance_period_days")] int? WiaRevocationMaintenancePeriodDays = null,
+    [property: JsonPropertyName("wia_attestation_format")] string[]? WiaAttestationFormat = null);
 
 /// <summary>
 /// Thin typed client over the Trustlist Web API. The bearer token is supplied

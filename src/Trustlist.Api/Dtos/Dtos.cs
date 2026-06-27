@@ -29,13 +29,25 @@ public record TrustlistEntityDto(
     [property: JsonPropertyName("security_email")] string? SecurityEmail,
     [property: JsonPropertyName("next_update")] DateTimeOffset? NextUpdate,
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
-    [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt)
+    [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
+    // Role-specific key material / WIA fields (MAS-687): surfaced so the admin UI can
+    // show what each role is missing and round-trip what it set.
+    [property: JsonPropertyName("trust_anchors")] TrustAnchorDto[]? TrustAnchors,
+    [property: JsonPropertyName("client_identifiers")] ClientIdentifierDto[]? ClientIdentifiers,
+    [property: JsonPropertyName("wia_status_list_uri")] string? WiaStatusListUri,
+    [property: JsonPropertyName("wia_revocation_maintenance_period_days")] int? WiaRevocationMaintenancePeriodDays,
+    [property: JsonPropertyName("wia_attestation_format")] string[]? WiaAttestationFormat)
 {
     public static TrustlistEntityDto From(TrustlistEntity e) => new(
         e.Id, e.Role.ToString(), e.EntityId, e.EntityName, e.EntityLegalName,
         e.Jurisdiction, e.RegistrationNumber, e.Status.ToString(),
         e.CertificationScheme, e.CertificateId, e.Scope, e.SecurityEmail,
-        e.NextUpdate, e.CreatedAt, e.UpdatedAt);
+        e.NextUpdate, e.CreatedAt, e.UpdatedAt,
+        TrustAnchorMapping.Deserialize(e.TrustAnchorsJson),
+        ClientIdentifierMapping.Deserialize(e.ClientIdentifiersJson),
+        e.WiaStatusListUri,
+        e.WiaRevocationMaintenancePeriodDays,
+        StringArrayJson.Deserialize(e.WiaAttestationFormatJson));
 }
 
 public class CreateTrustlistEntityRequest
@@ -75,6 +87,31 @@ public class CreateTrustlistEntityRequest
 
     [JsonPropertyName("next_update")]
     public DateTimeOffset? NextUpdate { get; set; }
+
+    // ----- Role-specific fields (MAS-687) -----
+    // These let the admin populate the key material / WIA fields the canonical
+    // openapi-trustlist-directory.yaml requires per role. All optional on the wire;
+    // role-specific validation happens at the read/projection layer (RoleRecordMapper).
+
+    /// <summary>Issuer + Wallet-Provider signing keys (the "pubkey" trust anchors).</summary>
+    [JsonPropertyName("trust_anchors")]
+    public TrustAnchorDto[]? TrustAnchors { get; set; }
+
+    /// <summary>Verifier OpenID4VP §5.9 client identifiers (the Verifier's identity / key binding).</summary>
+    [JsonPropertyName("client_identifiers")]
+    public ClientIdentifierDto[]? ClientIdentifiers { get; set; }
+
+    /// <summary>Wallet-Provider WIA Token Status List URI.</summary>
+    [JsonPropertyName("wia_status_list_uri")]
+    public string? WiaStatusListUri { get; set; }
+
+    /// <summary>Wallet-Provider WIA revocation maintenance period (days).</summary>
+    [JsonPropertyName("wia_revocation_maintenance_period_days")]
+    public int? WiaRevocationMaintenancePeriodDays { get; set; }
+
+    /// <summary>Wallet-Provider WIA attestation formats.</summary>
+    [JsonPropertyName("wia_attestation_format")]
+    public string[]? WiaAttestationFormat { get; set; }
 }
 
 public class UpdateTrustlistEntityRequest
@@ -108,4 +145,20 @@ public class UpdateTrustlistEntityRequest
 
     [JsonPropertyName("next_update")]
     public DateTimeOffset? NextUpdate { get; set; }
+
+    // ----- Role-specific fields (MAS-687) -----
+    [JsonPropertyName("trust_anchors")]
+    public TrustAnchorDto[]? TrustAnchors { get; set; }
+
+    [JsonPropertyName("client_identifiers")]
+    public ClientIdentifierDto[]? ClientIdentifiers { get; set; }
+
+    [JsonPropertyName("wia_status_list_uri")]
+    public string? WiaStatusListUri { get; set; }
+
+    [JsonPropertyName("wia_revocation_maintenance_period_days")]
+    public int? WiaRevocationMaintenancePeriodDays { get; set; }
+
+    [JsonPropertyName("wia_attestation_format")]
+    public string[]? WiaAttestationFormat { get; set; }
 }

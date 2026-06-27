@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -66,6 +67,12 @@ public class TrustlistController(AppDbContext db) : ControllerBase
             Scope = req.Scope,
             SecurityEmail = req.SecurityEmail,
             NextUpdate = req.NextUpdate,
+            // Role-specific key material / WIA fields (MAS-687).
+            TrustAnchorsJson = SerializeOrNull(req.TrustAnchors),
+            ClientIdentifiersJson = SerializeOrNull(req.ClientIdentifiers),
+            WiaStatusListUri = NullIfBlank(req.WiaStatusListUri),
+            WiaRevocationMaintenancePeriodDays = req.WiaRevocationMaintenancePeriodDays,
+            WiaAttestationFormatJson = SerializeOrNull(req.WiaAttestationFormat),
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
@@ -75,6 +82,16 @@ public class TrustlistController(AppDbContext db) : ControllerBase
 
         return CreatedAtAction(nameof(Get), new { id = entity.Id }, TrustlistEntityDto.From(entity));
     }
+
+    // Serialize a structured array to the canonical snake_case JSON used by the
+    // read/projection layer, or null when empty so role validation stays consistent.
+    private static string? SerializeOrNull<T>(T[]? values) =>
+        values is null || values.Length == 0
+            ? null
+            : JsonSerializer.Serialize(values, TrustlistJson.Options);
+
+    private static string? NullIfBlank(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s;
 
     [Authorize]
     [HttpPut("{id:int}")]
@@ -93,6 +110,18 @@ public class TrustlistController(AppDbContext db) : ControllerBase
         entity.Scope = req.Scope;
         entity.SecurityEmail = req.SecurityEmail;
         entity.NextUpdate = req.NextUpdate;
+        // Role-specific key material / WIA fields (MAS-687). Only overwrite when the
+        // caller supplied a value, so a generic edit doesn't wipe existing key material.
+        if (req.TrustAnchors is not null)
+            entity.TrustAnchorsJson = SerializeOrNull(req.TrustAnchors);
+        if (req.ClientIdentifiers is not null)
+            entity.ClientIdentifiersJson = SerializeOrNull(req.ClientIdentifiers);
+        if (req.WiaStatusListUri is not null)
+            entity.WiaStatusListUri = NullIfBlank(req.WiaStatusListUri);
+        if (req.WiaRevocationMaintenancePeriodDays is not null)
+            entity.WiaRevocationMaintenancePeriodDays = req.WiaRevocationMaintenancePeriodDays;
+        if (req.WiaAttestationFormat is not null)
+            entity.WiaAttestationFormatJson = SerializeOrNull(req.WiaAttestationFormat);
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync();

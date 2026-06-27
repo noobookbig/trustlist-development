@@ -1,5 +1,6 @@
 @page "/manage"
 @rendermode InteractiveServer
+@using System.Text.Json
 @inject TrustlistApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
@@ -54,6 +55,122 @@ else
                 <input @bind="newEntity.SecurityEmail" />
             </label>
         </div>
+
+        @* ---- Trust anchors (signing keys / pubkeys): Issuer + Wallet Provider ---- *@
+        @if (newEntity.Role is "Issuer" or "WalletProvider")
+        {
+            <fieldset class="role-block">
+                <legend>Trust anchors (signing keys / public keys)</legend>
+                <p class="hint">
+                    Each anchor is a signing key the directory publishes for this entity
+                    (openapi-trustlist-directory.yaml §TrustAnchor). Provide a JWK (RFC 7517)
+                    or an X.509 chain (x5c).
+                </p>
+                @for (var i = 0; i < trustAnchors.Count; i++)
+                {
+                    var idx = i;
+                    var anchor = trustAnchors[idx];
+                    <div class="anchor-row">
+                        <div class="form-grid">
+                            <label>Key ID (kid)
+                                <input @bind="anchor.Kid" placeholder="k-2026-q2" />
+                            </label>
+                            <label>Format
+                                <select @bind="anchor.Format">
+                                    <option value="jwk">jwk</option>
+                                    <option value="x509">x509</option>
+                                </select>
+                            </label>
+                            <label>Status
+                                <select @bind="anchor.Status">
+                                    <option value="active">active</option>
+                                    <option value="retired">retired</option>
+                                    <option value="compromise">compromise</option>
+                                </select>
+                            </label>
+                        </div>
+                        @if (anchor.Format == "jwk")
+                        {
+                            <label>JWK (JSON)
+                                <textarea rows="3" @bind="anchor.JwkJson"
+                                    placeholder='{"kty":"EC","crv":"P-256","use":"sig","alg":"ES256","kid":"k-2026-q2","x":"...","y":"..."}'></textarea>
+                            </label>
+                        }
+                        else
+                        {
+                            <label>x5c (one base64 cert per line)
+                                <textarea rows="3" @bind="anchor.X5cText"
+                                    placeholder="MIIB...base64-der-cert..."></textarea>
+                            </label>
+                        }
+                        <button class="danger small" @onclick="() => RemoveAnchor(idx)">Remove key</button>
+                    </div>
+                }
+                <button class="secondary" @onclick="AddAnchor">+ Add signing key</button>
+            </fieldset>
+        }
+
+        @* ---- Client identifiers (Verifier's identity / key binding) ---- *@
+        @if (newEntity.Role == "Verifier")
+        {
+            <fieldset class="role-block">
+                <legend>Client identifiers (Verifier identity / key binding)</legend>
+                <p class="hint">
+                    OpenID4VP 1.0 §5.9 — how the Verifier identifies itself to wallets.
+                    The wallet matches the Authorization Request <code>client_id</code> against these
+                    (e.g. an x509_san_dns name binds the Verifier's TLS/signing certificate).
+                </p>
+                @for (var i = 0; i < clientIds.Count; i++)
+                {
+                    var idx = i;
+                    var ci = clientIds[idx];
+                    <div class="anchor-row form-grid">
+                        <label>Prefix
+                            <select @bind="ci.Prefix">
+                                <option value="x509_san_dns">x509_san_dns</option>
+                                <option value="x509_san_uri">x509_san_uri</option>
+                                <option value="x509_hash">x509_hash</option>
+                                <option value="verifier_attestation">verifier_attestation</option>
+                                <option value="openid_federation">openid_federation</option>
+                                <option value="redirect_uri">redirect_uri</option>
+                                <option value="decentralized_identifier">decentralized_identifier</option>
+                            </select>
+                        </label>
+                        <label>Value
+                            <input @bind="ci.Value" placeholder="verifier.example.co.th" />
+                        </label>
+                        <button class="danger small" @onclick="() => RemoveClientId(idx)">Remove</button>
+                    </div>
+                }
+                <button class="secondary" @onclick="AddClientId">+ Add client identifier</button>
+            </fieldset>
+        }
+
+        @* ---- WIA (Wallet Instance Attestation): Wallet Provider only ---- *@
+        @if (newEntity.Role == "WalletProvider")
+        {
+            <fieldset class="role-block">
+                <legend>WIA — Wallet Instance Attestation</legend>
+                <p class="hint">
+                    openapi-trustlist-directory.yaml §WalletProviderRecord. Issuers use these to
+                    verify the WIA signature and check WIA revocation (OpenID4VCI 1.0 §13.3).
+                </p>
+                <div class="form-grid">
+                    <label>WIA status list URI
+                        <input @bind="newEntity.WiaStatusListUri"
+                            placeholder="https://wallet.example.co.th/wia-statuslist/v1.jwt" />
+                    </label>
+                    <label>WIA revocation maintenance period (days)
+                        <input type="number" min="1" max="3650" @bind="newEntity.WiaRevocationMaintenancePeriodDays" />
+                    </label>
+                    <label>WIA attestation format(s) (comma-separated)
+                        <input @bind="newEntity.WiaAttestationFormat"
+                            placeholder="oauth-client-attestation+jwt" />
+                    </label>
+                </div>
+            </fieldset>
+        }
+
         @if (createError is not null)
         {
             <p class="error">@createError</p>
@@ -68,7 +185,7 @@ else
     }
     <table class="grid">
         <thead>
-            <tr><th>Role</th><th>Name</th><th>Entity ID</th><th>Status</th><th></th></tr>
+            <tr><th>Role</th><th>Name</th><th>Entity ID</th><th>Status</th><th>Keys / WIA</th><th></th></tr>
         </thead>
         <tbody>
             @foreach (var e in entities)
@@ -78,6 +195,7 @@ else
                     <td>@e.EntityName</td>
                     <td class="mono">@e.EntityId</td>
                     <td>@e.Status</td>
+                    <td>@KeySummary(e)</td>
                     <td><button class="danger" @onclick="() => Delete(e.Id)">Delete</button></td>
                 </tr>
             }
@@ -92,6 +210,8 @@ else
     private bool busy;
 
     private CreateForm newEntity = new();
+    private List<AnchorForm> trustAnchors = [];
+    private List<ClientIdForm> clientIds = [];
 
     private class CreateForm
     {
@@ -104,6 +224,25 @@ else
         public string? RegistrationNumber { get; set; }
         public string? Scope { get; set; }
         public string? SecurityEmail { get; set; }
+        // Wallet-Provider WIA fields
+        public string? WiaStatusListUri { get; set; }
+        public int? WiaRevocationMaintenancePeriodDays { get; set; }
+        public string? WiaAttestationFormat { get; set; }
+    }
+
+    private class AnchorForm
+    {
+        public string Kid { get; set; } = "";
+        public string Format { get; set; } = "jwk";
+        public string Status { get; set; } = "active";
+        public string? JwkJson { get; set; }
+        public string? X5cText { get; set; }
+    }
+
+    private class ClientIdForm
+    {
+        public string Prefix { get; set; } = "x509_san_dns";
+        public string Value { get; set; } = "";
     }
 
     protected override async Task OnInitializedAsync()
@@ -117,21 +256,82 @@ else
         catch (Exception ex) { error = ex.Message; }
     }
 
+    private void AddAnchor() => trustAnchors.Add(new AnchorForm());
+    private void RemoveAnchor(int i) { if (i >= 0 && i < trustAnchors.Count) trustAnchors.RemoveAt(i); }
+    private void AddClientId() => clientIds.Add(new ClientIdForm());
+    private void RemoveClientId(int i) { if (i >= 0 && i < clientIds.Count) clientIds.RemoveAt(i); }
+
     private async Task Create()
     {
         createError = null;
         busy = true;
         try
         {
+            TrustAnchorModel[]? anchors = null;
+            if (newEntity.Role is "Issuer" or "WalletProvider" && trustAnchors.Count > 0)
+            {
+                var built = new List<TrustAnchorModel>();
+                foreach (var a in trustAnchors)
+                {
+                    if (string.IsNullOrWhiteSpace(a.Kid)) continue;
+                    JsonElement? jwk = null;
+                    string[]? x5c = null;
+                    if (a.Format == "jwk")
+                    {
+                        if (!string.IsNullOrWhiteSpace(a.JwkJson))
+                        {
+                            try { jwk = JsonDocument.Parse(a.JwkJson).RootElement.Clone(); }
+                            catch (JsonException jx)
+                            {
+                                createError = $"Invalid JWK JSON for key '{a.Kid}': {jx.Message}";
+                                return;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        x5c = (a.X5cText ?? "")
+                            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        if (x5c.Length == 0) x5c = null;
+                    }
+                    built.Add(new TrustAnchorModel(a.Kid, a.Format, a.Status, null, null, jwk, x5c));
+                }
+                if (built.Count > 0) anchors = built.ToArray();
+            }
+
+            ClientIdentifierModel[]? cids = null;
+            if (newEntity.Role == "Verifier" && clientIds.Count > 0)
+            {
+                var built = clientIds
+                    .Where(c => !string.IsNullOrWhiteSpace(c.Value))
+                    .Select(c => new ClientIdentifierModel(c.Prefix, c.Value))
+                    .ToArray();
+                if (built.Length > 0) cids = built;
+            }
+
+            string[]? wiaFormats = null;
+            if (newEntity.Role == "WalletProvider" && !string.IsNullOrWhiteSpace(newEntity.WiaAttestationFormat))
+            {
+                wiaFormats = newEntity.WiaAttestationFormat
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (wiaFormats.Length == 0) wiaFormats = null;
+            }
+
             var model = new CreateEntityModel(
                 newEntity.Role, newEntity.EntityId, newEntity.EntityName,
                 newEntity.EntityLegalName, newEntity.Jurisdiction, newEntity.RegistrationNumber,
-                newEntity.Status, null, null, newEntity.Scope, newEntity.SecurityEmail, null);
+                newEntity.Status, null, null, newEntity.Scope, newEntity.SecurityEmail, null,
+                anchors, cids,
+                newEntity.Role == "WalletProvider" ? newEntity.WiaStatusListUri : null,
+                newEntity.Role == "WalletProvider" ? newEntity.WiaRevocationMaintenancePeriodDays : null,
+                wiaFormats);
 
             var (ok, err) = await Api.CreateAsync(model, Auth.Token!);
             if (ok)
             {
                 newEntity = new CreateForm();
+                trustAnchors = [];
+                clientIds = [];
                 await Reload();
             }
             else
@@ -154,5 +354,14 @@ else
         var (ok, err) = await Api.DeleteAsync(id, Auth.Token!);
         if (ok) await Reload();
         else error = err;
+    }
+
+    private static string KeySummary(TrustlistEntityModel e)
+    {
+        var parts = new List<string>();
+        if (e.TrustAnchors is { Length: > 0 } ta) parts.Add($"{ta.Length} key(s)");
+        if (e.ClientIdentifiers is { Length: > 0 } ci) parts.Add($"{ci.Length} client-id(s)");
+        if (!string.IsNullOrWhiteSpace(e.WiaStatusListUri)) parts.Add("WIA");
+        return parts.Count == 0 ? "—" : string.Join(", ", parts);
     }
 }

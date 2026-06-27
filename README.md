@@ -132,10 +132,20 @@ segment.
 | `POST` | `/api/auth/login` | public | Login, returns JWT |
 | `GET` | `/api/trustlist` | public | Flat list (`?role=&status=&jurisdiction=&q=`) |
 | `GET` | `/api/trustlist/{id}` | public | Get one entity (by numeric id) |
-| `POST` | `/api/trustlist` | **JWT** | Create entity |
-| `PUT` | `/api/trustlist/{id}` | **JWT** | Update entity |
+| `POST` | `/api/trustlist` | **JWT** | Create entity (accepts role-specific key material — see below) |
+| `PUT` | `/api/trustlist/{id}` | **JWT** | Update entity (role-specific fields overwrite only when supplied) |
 | `DELETE` | `/api/trustlist/{id}` | **JWT** | Delete entity |
 | `GET` | `/health` | public | Liveness |
+
+The create/update body and the **Manage** page now carry the role-specific key
+material the canonical spec requires (MAS-687):
+
+- **Issuer** / **Wallet Provider** — `trust_anchors[]` (the published signing keys /
+  "pubkey": `kid` + `format` + `status` + `jwk` or `x5c`).
+- **Verifier** — `client_identifiers[]` (OpenID4VP §5.9 identity / key binding:
+  `prefix` + `value`).
+- **Wallet Provider** — WIA fields: `wia_status_list_uri`,
+  `wia_revocation_maintenance_period_days`, `wia_attestation_format[]`.
 
 ### Quick smoke (after `compose up`)
 
