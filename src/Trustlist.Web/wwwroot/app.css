@@ -295,10 +295,63 @@ h1 {
     letter-spacing: 0.02em; line-height: 1.4;
     border: 1px solid transparent;
 }
-/* roles */
-.role-issuer { background: var(--tint-cyan-bg); color: var(--tint-cyan-ink); border-color: rgba(45, 226, 255, 0.3); }
-.role-verifier { background: var(--tint-violet-bg); color: var(--tint-violet-ink); border-color: rgba(155, 107, 255, 0.32); }
-.role-walletprovider { background: var(--tint-magenta-bg); color: var(--tint-magenta-ink); border-color: rgba(255, 79, 215, 0.3); }
+/* roles — gradient text fill matching each role's neon accent.
+   Pill background-color stays (for affordance + non-text contrast
+   against the row); the text becomes a gradient clipped to the glyphs
+   so the badge reads as the role's signature color. Border tint and
+   tinted pill reinforce the role, so the gradient is a delighter and
+   never the only signal of role.
+   Falls back to a solid tinted-ink color in browsers that don't
+   support background-clip:text, and in forced-colors / high-contrast
+   modes — keeps the role readable for everyone. */
+.role-issuer { background-color: var(--tint-cyan-bg); color: var(--tint-cyan-ink); border-color: rgba(45, 226, 255, 0.4); }
+.role-verifier { background-color: var(--tint-violet-bg); color: var(--tint-violet-ink); border-color: rgba(155, 107, 255, 0.4); }
+.role-walletprovider { background-color: var(--tint-magenta-bg); color: var(--tint-magenta-ink); border-color: rgba(255, 79, 215, 0.4); }
+
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+    .role-issuer,
+    .role-issuer .role-text {
+        background-image: linear-gradient(92deg, var(--neon-strong) 0%, var(--tint-cyan-ink) 60%, var(--neon) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        font-weight: var(--weight-bold);
+        letter-spacing: 0.04em;
+    }
+    .role-verifier,
+    .role-verifier .role-text {
+        background-image: linear-gradient(92deg, #b894ff 0%, var(--tint-violet-ink) 60%, #7d4dff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        font-weight: var(--weight-bold);
+        letter-spacing: 0.04em;
+    }
+    .role-walletprovider,
+    .role-walletprovider .role-text {
+        background-image: linear-gradient(92deg, #ff8fe1 0%, var(--tint-magenta-ink) 60%, var(--magenta) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        font-weight: var(--weight-bold);
+        letter-spacing: 0.04em;
+    }
+}
+
+/* Forced-colors mode (Windows High Contrast, etc.) — text must remain
+   readable; revert gradient fill to solid ink. */
+@media (forced-colors: active) {
+    .role-issuer, .role-verifier, .role-walletprovider,
+    .role-issuer .role-text, .role-verifier .role-text, .role-walletprovider .role-text {
+        -webkit-text-fill-color: CanvasText;
+        color: CanvasText;
+        background-image: none;
+        font-weight: var(--weight-bold);
+    }
+}
 /* status */
 .status-valid { background: var(--tint-green-bg); color: var(--tint-green-ink); border-color: rgba(62, 242, 161, 0.32); }
 .status-suspended { background: var(--tint-amber-bg); color: var(--tint-amber-ink); border-color: rgba(255, 206, 79, 0.32); }
@@ -410,6 +463,12 @@ textarea:focus { outline: none; border-color: var(--neon); box-shadow: var(--glo
 }
 .anchor-row { padding: var(--space-3) 0; border-top: 1px dashed var(--line-soft); }
 .anchor-row:first-child { border-top: none; }
+/* breathing room above the row's action button (board feedback:
+   "Remove key button too close to the top edge"). Token-driven gap. */
+.anchor-row > button.danger,
+.anchor-row > button.secondary {
+    margin-top: var(--space-3);
+}
 
 /* ---------------- Buttons ---------------- */
 button { cursor: pointer; font-size: var(--text-sm); font-family: inherit; }
