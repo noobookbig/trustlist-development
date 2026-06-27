@@ -61,6 +61,20 @@ h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
 .status-suspended { background: #fef3c7; color: var(--amber); }
 .status-withdrawn, .status-expired { background: #fee2e2; color: var(--red); }
 .status-applied, .status-vetted { background: #e2e8f0; color: var(--grey); }
+.anchor-active { background: #dcfce7; color: var(--green); }
+.anchor-retired { background: #e2e8f0; color: var(--grey); }
+.anchor-compromise { background: #fee2e2; color: var(--red); }
+
+.detail-row > td { background: #f8fafc; padding: 1rem 1.25rem; }
+.detail-block { margin-bottom: 1rem; }
+.detail-block:last-child { margin-bottom: 0; }
+.detail-block h4 { margin: 0 0 .5rem; font-size: .85rem; color: var(--grey); text-transform: uppercase; letter-spacing: .03em; }
+.sub-grid { background: var(--card); }
+.sub-grid th { background: #eef2f7; }
+.wrap { white-space: normal; word-break: break-all; }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .75rem; margin: 0; font-size: .85rem; }
+dl.kv dt { color: var(--grey); font-weight: 600; }
+dl.kv dd { margin: 0; }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem; }
 .auth-card { max-width: 420px; display: flex; flex-direction: column; gap: .85rem; }

@@ -47,7 +47,9 @@ else
                 <th>Jurisdiction</th>
                 <th>Status</th>
                 <th>Scope</th>
+                <th>Keys / WIA</th>
                 <th>Next update</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -60,8 +62,92 @@ else
                     <td>@e.Jurisdiction</td>
                     <td><span class="badge status-@e.Status.ToLower()">@e.Status</span></td>
                     <td class="mono small">@e.Scope</td>
+                    <td class="small">@KeySummary(e)</td>
                     <td>@(e.NextUpdate?.ToString("yyyy-MM-dd") ?? "-")</td>
+                    <td>
+                        @if (HasKeyMaterial(e))
+                        {
+                            <button class="link-btn" @onclick="() => ToggleDetails(e.Id)">
+                                @(expanded.Contains(e.Id) ? "Hide" : "Details")
+                            </button>
+                        }
+                    </td>
                 </tr>
+                @if (expanded.Contains(e.Id) && HasKeyMaterial(e))
+                {
+                    <tr class="detail-row">
+                        <td colspan="9">
+                            @* Public key material per the research spec / openapi-trustlist-directory.yaml.
+                               Issuers & Wallet Providers publish trust_anchors (signing keys); Verifiers
+                               publish client_identifiers; Wallet Providers also publish WIA metadata. *@
+                            @if (e.TrustAnchors is { Length: > 0 })
+                            {
+                                <div class="detail-block">
+                                    <h4>Trust anchors (signing keys / public keys)</h4>
+                                    <table class="grid sub-grid">
+                                        <thead>
+                                            <tr><th>Key ID (kid)</th><th>Format</th><th>Status</th><th>Public key</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var a in e.TrustAnchors)
+                                            {
+                                                <tr>
+                                                    <td class="mono">@a.Kid</td>
+                                                    <td>@a.Format</td>
+                                                    <td><span class="badge anchor-@a.Status.ToLower()">@a.Status</span></td>
+                                                    <td class="mono small wrap">@AnchorKeyText(a)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            @if (e.ClientIdentifiers is { Length: > 0 })
+                            {
+                                <div class="detail-block">
+                                    <h4>Client identifiers (Verifier identity / key binding)</h4>
+                                    <table class="grid sub-grid">
+                                        <thead>
+                                            <tr><th>Prefix</th><th>Value</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var c in e.ClientIdentifiers)
+                                            {
+                                                <tr>
+                                                    <td class="mono">@c.Prefix</td>
+                                                    <td class="mono small wrap">@c.Value</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            @if (HasWia(e))
+                            {
+                                <div class="detail-block">
+                                    <h4>WIA — Wallet Instance Attestation</h4>
+                                    <dl class="kv">
+                                        @if (!string.IsNullOrWhiteSpace(e.WiaStatusListUri))
+                                        {
+                                            <dt>Status list URI</dt>
+                                            <dd class="mono small wrap">@e.WiaStatusListUri</dd>
+                                        }
+                                        @if (e.WiaRevocationMaintenancePeriodDays is { } days)
+                                        {
+                                            <dt>Revocation maintenance period</dt>
+                                            <dd>@days day(s)</dd>
+                                        }
+                                        @if (e.WiaAttestationFormat is { Length: > 0 } fmts)
+                                        {
+                                            <dt>Attestation format(s)</dt>
+                                            <dd class="mono small">@string.Join(", ", fmts)</dd>
+                                        }
+                                    </dl>
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>
@@ -75,6 +161,51 @@ else
     private string role = "";
     private string status = "";
     private string search = "";
+
+    // Ids of rows whose key-material detail panel is currently expanded.
+    private readonly HashSet<int> expanded = [];
+
+    private void ToggleDetails(int id)
+    {
+        if (!expanded.Remove(id)) expanded.Add(id);
+    }
+
+    private static bool HasWia(TrustlistEntityModel e) =>
+        !string.IsNullOrWhiteSpace(e.WiaStatusListUri)
+        || e.WiaRevocationMaintenancePeriodDays is not null
+        || e.WiaAttestationFormat is { Length: > 0 };
+
+    private static bool HasKeyMaterial(TrustlistEntityModel e) =>
+        e.TrustAnchors is { Length: > 0 }
+        || e.ClientIdentifiers is { Length: > 0 }
+        || HasWia(e);
+
+    private static string KeySummary(TrustlistEntityModel e)
+    {
+        var parts = new List<string>();
+        if (e.TrustAnchors is { Length: > 0 } ta) parts.Add($"{ta.Length} key(s)");
+        if (e.ClientIdentifiers is { Length: > 0 } ci) parts.Add($"{ci.Length} client-id(s)");
+        if (HasWia(e)) parts.Add("WIA");
+        return parts.Count == 0 ? "—" : string.Join(", ", parts);
+    }
+
+    // Render a compact, read-only view of the published public key. JWK is shown as
+    // its compact JSON; an x5c chain shows the leaf certificate (first entry) with a
+    // count of any additional chain certs.
+    private static string AnchorKeyText(TrustAnchorModel a)
+    {
+        if (a.Jwk is { } jwk)
+        {
+            return jwk.GetRawText();
+        }
+        if (a.X5c is { Length: > 0 } x5c)
+        {
+            var leaf = x5c[0];
+            var shown = leaf.Length > 64 ? leaf[..64] + "…" : leaf;
+            return x5c.Length > 1 ? $"x5c: {shown} (+{x5c.Length - 1} chain cert(s))" : $"x5c: {shown}";
+        }
+        return "—";
+    }
 
     protected override async Task OnInitializedAsync() => await Reload();
 
