@@ -14,10 +14,12 @@
 else
 {
     <div class="card">
-        <h2>Add entity</h2>
+        <h2>@(editingId is null ? "Add entity" : $"Edit entity #{editingId}")</h2>
         <div class="form-grid">
             <label>Role
-                <select @bind="newEntity.Role">
+                @* Role and Entity ID are immutable once the record exists, so the PUT
+                   path (UpdateTrustlistEntityRequest) doesn't carry them. Lock them in edit mode. *@
+                <select @bind="newEntity.Role" disabled="@(editingId is not null)">
                     <option value="Issuer">Issuer</option>
                     <option value="Verifier">Verifier</option>
                     <option value="WalletProvider">Wallet Provider</option>
@@ -34,7 +36,8 @@ else
                 </select>
             </label>
             <label>Entity ID (https URL)
-                <input @bind="newEntity.EntityId" placeholder="https://issuer.example.go.th" />
+                <input @bind="newEntity.EntityId" placeholder="https://issuer.example.go.th"
+                    disabled="@(editingId is not null)" />
             </label>
             <label>Name
                 <input @bind="newEntity.EntityName" placeholder="Display name" />
@@ -175,7 +178,15 @@ else
         {
             <p class="error">@createError</p>
         }
-        <button class="primary" @onclick="Create" disabled="@busy">Add entity</button>
+        @if (editingId is null)
+        {
+            <button class="primary" @onclick="Save" disabled="@busy">Add entity</button>
+        }
+        else
+        {
+            <button class="primary" @onclick="Save" disabled="@busy">Save changes</button>
+            <button class="secondary" @onclick="CancelEdit" disabled="@busy">Cancel</button>
+        }
     </div>
 
     <h2>Existing entities</h2>
@@ -196,7 +207,10 @@ else
                     <td class="mono">@e.EntityId</td>
                     <td>@e.Status</td>
                     <td>@KeySummary(e)</td>
-                    <td><button class="danger" @onclick="() => Delete(e.Id)">Delete</button></td>
+                    <td>
+                        <button class="secondary" @onclick="() => BeginEdit(e)">Edit</button>
+                        <button class="danger" @onclick="() => Delete(e.Id)">Delete</button>
+                    </td>
                 </tr>
             }
         </tbody>
@@ -212,6 +226,9 @@ else
     private CreateForm newEntity = new();
     private List<AnchorForm> trustAnchors = [];
     private List<ClientIdForm> clientIds = [];
+
+    // null = creating a new entity; otherwise the id of the entity being edited in-place (MAS-688).
+    private int? editingId;
 
     private class CreateForm
     {
@@ -261,82 +278,172 @@ else
     private void AddClientId() => clientIds.Add(new ClientIdForm());
     private void RemoveClientId(int i) { if (i >= 0 && i < clientIds.Count) clientIds.RemoveAt(i); }
 
-    private async Task Create()
+    // Load an existing record into the shared editor, pre-populating the role-specific
+    // signing-key / client-identifier / WIA editors from the read DTO (MAS-688).
+    private void BeginEdit(TrustlistEntityModel e)
     {
         createError = null;
-        busy = true;
-        try
+        editingId = e.Id;
+        newEntity = new CreateForm
         {
-            TrustAnchorModel[]? anchors = null;
-            if (newEntity.Role is "Issuer" or "WalletProvider" && trustAnchors.Count > 0)
+            Role = e.Role,
+            Status = e.Status,
+            EntityId = e.EntityId,
+            EntityName = e.EntityName,
+            EntityLegalName = e.EntityLegalName,
+            Jurisdiction = e.Jurisdiction,
+            RegistrationNumber = e.RegistrationNumber,
+            Scope = e.Scope,
+            SecurityEmail = e.SecurityEmail,
+            WiaStatusListUri = e.WiaStatusListUri,
+            WiaRevocationMaintenancePeriodDays = e.WiaRevocationMaintenancePeriodDays,
+            WiaAttestationFormat = e.WiaAttestationFormat is { Length: > 0 } f
+                ? string.Join(", ", f)
+                : null,
+        };
+
+        trustAnchors = (e.TrustAnchors ?? [])
+            .Select(a => new AnchorForm
             {
-                var built = new List<TrustAnchorModel>();
-                foreach (var a in trustAnchors)
+                Kid = a.Kid,
+                Format = a.Format,
+                Status = a.Status,
+                // Re-serialize the JWK back to text so the admin can edit it in the textarea.
+                JwkJson = a.Jwk is { } jwk
+                    ? JsonSerializer.Serialize(jwk, new JsonSerializerOptions { WriteIndented = false })
+                    : null,
+                X5cText = a.X5c is { Length: > 0 } x5c ? string.Join("\n", x5c) : null,
+            })
+            .ToList();
+
+        clientIds = (e.ClientIdentifiers ?? [])
+            .Select(c => new ClientIdForm { Prefix = c.Prefix, Value = c.Value })
+            .ToList();
+    }
+
+    private void CancelEdit()
+    {
+        editingId = null;
+        createError = null;
+        newEntity = new CreateForm();
+        trustAnchors = [];
+        clientIds = [];
+    }
+
+    // Build the role-specific key material arrays from the current editor state.
+    // On error, sets createError and returns false. When editing, an empty editor
+    // for a role that owns the field yields an empty (non-null) array so the admin
+    // can deliberately clear key material; a null is only returned when the role
+    // does not own the field, leaving the server value untouched.
+    private bool TryBuildRoleSpecific(
+        out TrustAnchorModel[]? anchors,
+        out ClientIdentifierModel[]? cids,
+        out string? wiaUri,
+        out int? wiaPeriod,
+        out string[]? wiaFormats)
+    {
+        anchors = null;
+        cids = null;
+        wiaUri = null;
+        wiaPeriod = null;
+        wiaFormats = null;
+
+        if (newEntity.Role is "Issuer" or "WalletProvider")
+        {
+            var built = new List<TrustAnchorModel>();
+            foreach (var a in trustAnchors)
+            {
+                if (string.IsNullOrWhiteSpace(a.Kid)) continue;
+                JsonElement? jwk = null;
+                string[]? x5c = null;
+                if (a.Format == "jwk")
                 {
-                    if (string.IsNullOrWhiteSpace(a.Kid)) continue;
-                    JsonElement? jwk = null;
-                    string[]? x5c = null;
-                    if (a.Format == "jwk")
+                    if (!string.IsNullOrWhiteSpace(a.JwkJson))
                     {
-                        if (!string.IsNullOrWhiteSpace(a.JwkJson))
+                        try { jwk = JsonDocument.Parse(a.JwkJson).RootElement.Clone(); }
+                        catch (JsonException jx)
                         {
-                            try { jwk = JsonDocument.Parse(a.JwkJson).RootElement.Clone(); }
-                            catch (JsonException jx)
-                            {
-                                createError = $"Invalid JWK JSON for key '{a.Kid}': {jx.Message}";
-                                return;
-                            }
+                            createError = $"Invalid JWK JSON for key '{a.Kid}': {jx.Message}";
+                            return false;
                         }
                     }
-                    else
-                    {
-                        x5c = (a.X5cText ?? "")
-                            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                        if (x5c.Length == 0) x5c = null;
-                    }
-                    built.Add(new TrustAnchorModel(a.Kid, a.Format, a.Status, null, null, jwk, x5c));
                 }
-                if (built.Count > 0) anchors = built.ToArray();
+                else
+                {
+                    x5c = (a.X5cText ?? "")
+                        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (x5c.Length == 0) x5c = null;
+                }
+                built.Add(new TrustAnchorModel(a.Kid, a.Format, a.Status, null, null, jwk, x5c));
             }
+            // In edit mode, always send the array (even if empty) so explicit removals stick.
+            // In create mode, only send when there is something to set.
+            anchors = built.Count > 0 ? built.ToArray()
+                : editingId is not null ? [] : null;
+        }
 
-            ClientIdentifierModel[]? cids = null;
-            if (newEntity.Role == "Verifier" && clientIds.Count > 0)
-            {
-                var built = clientIds
-                    .Where(c => !string.IsNullOrWhiteSpace(c.Value))
-                    .Select(c => new ClientIdentifierModel(c.Prefix, c.Value))
-                    .ToArray();
-                if (built.Length > 0) cids = built;
-            }
+        if (newEntity.Role == "Verifier")
+        {
+            var built = clientIds
+                .Where(c => !string.IsNullOrWhiteSpace(c.Value))
+                .Select(c => new ClientIdentifierModel(c.Prefix, c.Value))
+                .ToArray();
+            cids = built.Length > 0 ? built
+                : editingId is not null ? [] : null;
+        }
 
-            string[]? wiaFormats = null;
-            if (newEntity.Role == "WalletProvider" && !string.IsNullOrWhiteSpace(newEntity.WiaAttestationFormat))
+        if (newEntity.Role == "WalletProvider")
+        {
+            wiaUri = newEntity.WiaStatusListUri;
+            wiaPeriod = newEntity.WiaRevocationMaintenancePeriodDays;
+            if (!string.IsNullOrWhiteSpace(newEntity.WiaAttestationFormat))
             {
                 wiaFormats = newEntity.WiaAttestationFormat
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (wiaFormats.Length == 0) wiaFormats = null;
             }
+        }
 
-            var model = new CreateEntityModel(
-                newEntity.Role, newEntity.EntityId, newEntity.EntityName,
-                newEntity.EntityLegalName, newEntity.Jurisdiction, newEntity.RegistrationNumber,
-                newEntity.Status, null, null, newEntity.Scope, newEntity.SecurityEmail, null,
-                anchors, cids,
-                newEntity.Role == "WalletProvider" ? newEntity.WiaStatusListUri : null,
-                newEntity.Role == "WalletProvider" ? newEntity.WiaRevocationMaintenancePeriodDays : null,
-                wiaFormats);
+        return true;
+    }
 
-            var (ok, err) = await Api.CreateAsync(model, Auth.Token!);
-            if (ok)
+    private async Task Save()
+    {
+        createError = null;
+        busy = true;
+        try
+        {
+            if (!TryBuildRoleSpecific(out var anchors, out var cids, out var wiaUri, out var wiaPeriod, out var wiaFormats))
+                return;
+
+            (bool ok, string? err) result;
+            if (editingId is null)
             {
-                newEntity = new CreateForm();
-                trustAnchors = [];
-                clientIds = [];
+                var model = new CreateEntityModel(
+                    newEntity.Role, newEntity.EntityId, newEntity.EntityName,
+                    newEntity.EntityLegalName, newEntity.Jurisdiction, newEntity.RegistrationNumber,
+                    newEntity.Status, null, null, newEntity.Scope, newEntity.SecurityEmail, null,
+                    anchors, cids, wiaUri, wiaPeriod, wiaFormats);
+                result = await Api.CreateAsync(model, Auth.Token!);
+            }
+            else
+            {
+                var model = new UpdateEntityModel(
+                    newEntity.EntityName, newEntity.EntityLegalName, newEntity.Jurisdiction,
+                    newEntity.RegistrationNumber, newEntity.Status, null, null,
+                    newEntity.Scope, newEntity.SecurityEmail, null,
+                    anchors, cids, wiaUri, wiaPeriod, wiaFormats);
+                result = await Api.UpdateAsync(editingId.Value, model, Auth.Token!);
+            }
+
+            if (result.ok)
+            {
+                CancelEdit();
                 await Reload();
             }
             else
             {
-                createError = err;
+                createError = result.err;
             }
         }
         catch (Exception ex)

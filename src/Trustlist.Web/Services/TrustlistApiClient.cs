@@ -73,6 +73,28 @@ public record CreateEntityModel(
     [property: JsonPropertyName("wia_revocation_maintenance_period_days")] int? WiaRevocationMaintenancePeriodDays = null,
     [property: JsonPropertyName("wia_attestation_format")] string[]? WiaAttestationFormat = null);
 
+// Mirrors UpdateTrustlistEntityRequest on the API. Role and entity_id are immutable
+// on edit, so they are intentionally absent. The role-specific arrays are nullable:
+// the API only overwrites a field when the caller supplies it, so leaving these null
+// preserves the existing trust_anchors / client_identifiers / WIA (MAS-688 regression
+// guard). Pass an empty array to explicitly clear key material.
+public record UpdateEntityModel(
+    [property: JsonPropertyName("entity_name")] string EntityName,
+    [property: JsonPropertyName("entity_legal_name")] string? EntityLegalName,
+    [property: JsonPropertyName("jurisdiction")] string Jurisdiction,
+    [property: JsonPropertyName("registration_number")] string? RegistrationNumber,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("certification_scheme")] string? CertificationScheme,
+    [property: JsonPropertyName("certificate_id")] string? CertificateId,
+    [property: JsonPropertyName("scope")] string? Scope,
+    [property: JsonPropertyName("security_email")] string? SecurityEmail,
+    [property: JsonPropertyName("next_update")] DateTimeOffset? NextUpdate,
+    [property: JsonPropertyName("trust_anchors")] TrustAnchorModel[]? TrustAnchors = null,
+    [property: JsonPropertyName("client_identifiers")] ClientIdentifierModel[]? ClientIdentifiers = null,
+    [property: JsonPropertyName("wia_status_list_uri")] string? WiaStatusListUri = null,
+    [property: JsonPropertyName("wia_revocation_maintenance_period_days")] int? WiaRevocationMaintenancePeriodDays = null,
+    [property: JsonPropertyName("wia_attestation_format")] string[]? WiaAttestationFormat = null);
+
 /// <summary>
 /// Thin typed client over the Trustlist Web API. The bearer token is supplied
 /// per call from the session-scoped <see cref="AuthState"/>.
@@ -111,6 +133,26 @@ public class TrustlistApiClient(HttpClient http)
     public async Task<(bool ok, string? error)> CreateAsync(CreateEntityModel model, string token)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, "api/trustlist")
+        {
+            Content = JsonContent.Create(model)
+        };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var resp = await http.SendAsync(req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, $"{(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}");
+    }
+
+    /// <summary>Fetch a single entity (including role-specific key material) for editing.</summary>
+    public async Task<TrustlistEntityModel?> GetAsync(int id)
+        => await http.GetFromJsonAsync<TrustlistEntityModel>($"api/trustlist/{id}");
+
+    /// <summary>
+    /// Update an existing entity via PUT /api/trustlist/{id}. Null role-specific arrays
+    /// are preserved server-side; supply an empty array to clear key material.
+    /// </summary>
+    public async Task<(bool ok, string? error)> UpdateAsync(int id, UpdateEntityModel model, string token)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Put, $"api/trustlist/{id}")
         {
             Content = JsonContent.Create(model)
         };
