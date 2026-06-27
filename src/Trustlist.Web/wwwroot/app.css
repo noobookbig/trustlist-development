@@ -282,7 +282,8 @@ h1 {
 .grid tbody tr { transition: background var(--dur-fast) var(--ease); }
 .grid tbody tr:hover > td { background: var(--surface-2); }
 .grid tr:last-child td { border-bottom: none; }
-.mono { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-soft); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mono.wrap, .wrap { white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
 .small { font-size: var(--text-xs); color: var(--muted); }
 .count { color: var(--muted); font-size: var(--text-sm); }
 
@@ -307,6 +308,29 @@ h1 {
 .anchor-active { background: var(--tint-green-bg); color: var(--tint-green-ink); border-color: rgba(62, 242, 161, 0.32); }
 .anchor-retired { background: var(--tint-grey-bg); color: var(--tint-grey-ink); border-color: rgba(159, 176, 207, 0.28); }
 .anchor-compromise { background: var(--tint-red-bg); color: var(--tint-red-ink); border-color: rgba(255, 107, 125, 0.32); }
+
+/* ---------------- Scope (multi-value cell) ----------------
+   Scope is a comma-separated list of credential URIs (e.g.
+   "request:NationalIdCredential,request:org.iso.18013.5.1.mDL:age_over_18").
+   Rendered as a compact vertical chip list so each value is scannable
+   and the cell never overflows the row at any breakpoint. */
+.scope-cell { text-align: left; vertical-align: top; }
+.scope-list {
+    list-style: none; padding: 0; margin: 0;
+    display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+    align-items: flex-start;
+}
+.scope-list li { margin: 0; }
+.scope-chip code {
+    display: inline-block;
+    padding: 0.1rem 0.45rem; border-radius: var(--radius-pill);
+    background: var(--surface-3); color: var(--ink-soft);
+    border: 1px solid var(--line-soft);
+    font-size: var(--text-xs);
+    /* allow URIs to break across lines as a last resort on tiny viewports */
+    overflow-wrap: anywhere; word-break: break-word;
+}
+.muted { color: var(--muted); }
 
 /* ---------------- Expandable detail row ---------------- */
 .detail-row > td {
@@ -451,33 +475,20 @@ code {
    Responsive system
    ----------------------------------------------------------------
    Content-driven breakpoints:
-     • >900px  desktop (default)
-     • ≤900px  tablet  — looser chrome, single-column forms
-     • ≤640px  mobile  — directory table becomes stacked cards
-   ================================================================ */
+• >900px  desktop (default)
+     • ≤900px  tablet  — looser chrome, .grid.cards becomes stacked cards
+     • ≤640px  mobile  — single-column forms, stacked chrome
+    ================================================================ */
 
-/* ---- Tablet ---- */
+/* ---- Tablet (≤900px) ---- */
 @media (max-width: 900px) {
     .form-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
     .hero-body { max-width: 52ch; }
-    /* below tablet the wide grid scrolls horizontally with an affordance */
+    /* non-cards grids (admin tables) get a horizontal scroll affordance */
     .grid:not(.cards) { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .grid:not(.cards) > thead, .grid:not(.cards) > tbody { white-space: nowrap; }
-}
 
-/* ---- Mobile ---- */
-@media (max-width: 640px) {
-    .topbar { padding: var(--space-3) var(--space-4); }
-    .nav { gap: var(--space-3); }
-    .nav .user { display: none; }        /* keep chrome uncluttered on small screens */
-    .filters { gap: var(--space-2); flex-direction: column; align-items: stretch; }
-    .filters select, .filters input { width: 100%; min-width: 0; }
-    .hero { min-height: clamp(140px, 30vw, 220px); }
-    .auth-hero { min-height: clamp(380px, 70vh, 560px); }
-    .form-grid { grid-template-columns: 1fr; }   /* single-column forms (forms need room) */
-    .detail-row > td { padding: var(--space-4); }
-
-    /* ---- Directory grid → stacked cards ----
+    /* ---- .grid.cards → stacked cards (tablet & below) ----
        Each <tr> becomes a card; each <td> a labelled row driven by the
        data-label attribute on the cell. Recognition-over-recall: the
        column header travels with the value so nothing is decoded from
@@ -519,4 +530,17 @@ code {
     table.grid.cards > tbody > tr.detail-row > td::before { content: none; }
     /* nested sub-grids inside the detail card stay scrollable */
     .sub-grid { display: block; overflow-x: auto; white-space: nowrap; }
+}
+
+/* ---- Mobile (≤640px) ---- */
+@media (max-width: 640px) {
+    .topbar { padding: var(--space-3) var(--space-4); }
+    .nav { gap: var(--space-3); }
+    .nav .user { display: none; }        /* keep chrome uncluttered on small screens */
+    .filters { gap: var(--space-2); flex-direction: column; align-items: stretch; }
+    .filters select, .filters input { width: 100%; min-width: 0; }
+    .hero { min-height: clamp(140px, 30vw, 220px); }
+    .auth-hero { min-height: clamp(380px, 70vh, 560px); }
+    .form-grid { grid-template-columns: 1fr; }   /* single-column forms (forms need room) */
+    .detail-row > td { padding: var(--space-4); }
 }

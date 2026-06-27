@@ -66,7 +66,21 @@ else
                     <td data-label="Entity ID" class="mono">@e.EntityId</td>
                     <td data-label="Jurisdiction">@e.Jurisdiction</td>
                     <td data-label="Status"><span class="badge status-@e.Status.ToLower()">@e.Status</span></td>
-                    <td data-label="Scope" class="mono small">@e.Scope</td>
+                    <td data-label="Scope" class="scope-cell">
+                        @if (!string.IsNullOrWhiteSpace(e.Scope))
+                        {
+                            <ul class="scope-list" aria-label="@($"{e.EntityName} credential scopes")">
+                                @foreach (var s in e.Scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    <li class="scope-chip"><code>@s</code></li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <span class="muted">—</span>
+                        }
+                    </td>
                     <td data-label="Keys / WIA" class="small">@KeySummary(e)</td>
                     <td data-label="Next update">@(e.NextUpdate?.ToString("yyyy-MM-dd") ?? "-")</td>
                     <td data-label="">
