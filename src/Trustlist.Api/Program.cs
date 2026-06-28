@@ -253,6 +253,11 @@ app.UseMiddleware<JwsResponseMiddleware>();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "trustlist-api" }));
 
+// MAS-696 follow-up — version endpoint. Returns the API's <Version> from the
+// csproj plus the build SHA when set via the GIT_SHA env var. Convention: every
+// code change bumps the version, see AGENTS.md for the rule.
+app.MapGet("/version", Trustlist.Api.VersionEndpoint.Handler);
+
 // RFC 7517 JWKS — publishes the TL publisher's public key so Issuers / Wallets /
 // Verifiers can verify signed /v1/{role}/... responses without an out-of-band
 // trust anchor. Clients MUST cache for 24h per the v0 spec caching rule.
