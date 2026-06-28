@@ -36,6 +36,11 @@ app.UseAntiforgery();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "trustlist-web" }));
 
+// MAS-696 follow-up — version endpoint. Same shape as the API's /version so
+// the operator can confirm the Frontend / Backend pair is at the same number
+// after each deploy.
+app.MapGet("/version", Trustlist.Web.VersionEndpoint.Handler);
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

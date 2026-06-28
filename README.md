@@ -8,6 +8,29 @@ Ecosystem In Thailand* project. Built end-to-end in **C# .NET 8**:
 - **Frontend** — ASP.NET Core **Blazor Server** (`Trustlist.Web`) that talks to
   the API over HTTP.
 - **Database** — Microsoft SQL Server **Express** edition in a container.
+
+## Versioning
+
+Both projects ship a `<Version>` field in their csproj (`Trustlist.Api.csproj`,
+`Trustlist.Web.csproj`) and expose it at runtime via `GET /version`:
+
+```json
+{ "service": "trustlist-api", "version": "0.2.0", "build_sha": "acaf37d", "framework": "net8.0" }
+```
+
+**Convention (CEO 2026-06-28):** every code change bumps the version. Frontend
+and Backend must be at the same number after each commit so the operator
+dashboard can confirm a coherent deploy.
+
+| Change                  | Bump        |
+|-------------------------|-------------|
+| Bug fix, doc, refactor  | patch `0.2.0` → `0.2.1` |
+| New feature, new endpoint | minor `0.2.0` → `0.3.0` |
+| Breaking wire change    | major `0.2.0` → `1.0.0` |
+
+`AssemblyVersion` and `FileVersion` track `<Version>` (both set in the csproj).
+When CI builds, pass `--build-arg GIT_SHA=$(git rev-parse --short HEAD)` and the
+endpoint surfaces the short SHA so a client can pin to a specific build.
 - **Orchestration** — `docker compose` brings up all three together. Local only;
   no cloud deploy.
 
