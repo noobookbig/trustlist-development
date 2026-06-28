@@ -203,19 +203,31 @@ The API exposes two parallel surfaces:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/v1/issuers` | List issuers (`?status=&since=&jurisdiction=&page=&limit=`) |
+| `GET` | `/v1/trustlist` | **MAS-725** — top-level directory snapshot: `trustlist_version` + per-role counts. Plain JSON (not JWS-wrapped). |
+| `GET` | `/v1/issuers` | List issuers (`?status=&since=&jurisdiction=&page=&limit=`) — returns `trustlist_version` |
 | `GET` | `/v1/issuers/{entity-id}` | Single Issuer record (IssuerRecord shape) |
 | `GET` | `/v1/issuers/{entity-id}/status` | Lightweight `active` boolean + minimal cert metadata |
-| `GET` | `/v1/verifiers` | List verifiers |
+| `GET` | `/v1/verifiers` | List verifiers — returns `trustlist_version` |
 | `GET` | `/v1/verifiers/{entity-id}` | Single Verifier record (carries `client_identifiers[]`) |
 | `GET` | `/v1/verifiers/{entity-id}/status` | Lightweight status + primary client identifier |
-| `GET` | `/v1/wallet-providers` | List wallet providers |
+| `GET` | `/v1/wallet-providers` | List wallet providers — returns `trustlist_version` |
 | `GET` | `/v1/wallet-providers/{entity-id}` | Single WP record (carries `trust_anchors[]` + WIA URIs) |
 | `GET` | `/v1/wallet-providers/{entity-id}/status` | Lightweight status + cert metadata |
 
 `{entity-id}` is the canonical URL-form identifier (e.g.
 `https://issuer.mhesi.go.th`); encode `:` as `%3A` and `/` as `%2F` in the path
 segment.
+
+**Trustlist version (MAS-725).** Every `/v1/{role}` list response carries a
+`trustlist_version` field — a 12-hex-char SHA-256-truncated content hash of the
+**whole** directory state (not per role). The same value is returned by every
+list endpoint and by `/v1/trustlist`, so a Verifier / Wallet / Issuer pinning to
+a specific snapshot only needs one digest regardless of which role list it
+queries. The version shifts whenever any entity is added, updated, or removed
+(including `updated_at`, certification expiry, trust anchor JSON, client
+identifier JSON, status-list URIs, and `next_update` updates). See
+[TrustlistVersion.cs](src/Trustlist.Api/TrustlistVersion.cs) for the exact
+projection and ordering rules.
 
 ### Admin / manage surface
 

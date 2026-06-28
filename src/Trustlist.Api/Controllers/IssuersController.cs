@@ -64,8 +64,9 @@ public class IssuersController(AppDbContext db) : ControllerBase
             catch (InvalidOperationException ex)
             {
                 // Skip malformed rows — never let one bad entity kill the whole list.
-                // Logged at warning level via the controller's ILogger; surfaced to the
-                // caller only via the snapshot_id field once we add a publish pipeline.
+                // Logged at warning level via the controller's ILogger. The trustlist
+                // version in the response will still shift when the offending row is
+                // corrected, since it is computed against the full entity set.
                 HttpContext.RequestServices
                     .GetRequiredService<ILoggerFactory>()
                     .CreateLogger("Trustlist.Api.Directory")
@@ -84,7 +85,7 @@ public class IssuersController(AppDbContext db) : ControllerBase
                 total,
                 has_more = (long)page * limit < total
             },
-            snapshot_id = "local",
+            trustlist_version = await TrustlistVersion.ComputeAsync(db),
             next_update = (DateTimeOffset?)items.Max(e => e.NextUpdate)
         });
     }

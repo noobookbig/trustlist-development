@@ -81,7 +81,7 @@ public class VerifiersController(AppDbContext db) : ControllerBase
                 total,
                 has_more = (long)page * limit < total
             },
-            snapshot_id = "local",
+            trustlist_version = await TrustlistVersion.ComputeAsync(db),
             next_update = (DateTimeOffset?)items.Max(e => e.NextUpdate)
         });
     }

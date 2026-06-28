@@ -54,6 +54,21 @@ public record TrustlistEntityModel(
     [property: JsonPropertyName("wia_revocation_maintenance_period_days")] int? WiaRevocationMaintenancePeriodDays,
     [property: JsonPropertyName("wia_attestation_format")] string[]? WiaAttestationFormat);
 
+// MAS-725 — top-level directory snapshot summary returned by GET /v1/trustlist.
+// Wire shape: { trustlist_version, version_algorithm, counts: { issuers, verifiers,
+// wallet_providers, resolver_nodes, total } }.
+public record TrustlistCountsModel(
+    [property: JsonPropertyName("issuers")] int Issuers,
+    [property: JsonPropertyName("verifiers")] int Verifiers,
+    [property: JsonPropertyName("wallet_providers")] int WalletProviders,
+    [property: JsonPropertyName("resolver_nodes")] int ResolverNodes,
+    [property: JsonPropertyName("total")] int Total);
+
+public record TrustlistSnapshotModel(
+    [property: JsonPropertyName("trustlist_version")] string TrustlistVersion,
+    [property: JsonPropertyName("version_algorithm")] string? VersionAlgorithm,
+    [property: JsonPropertyName("counts")] TrustlistCountsModel Counts);
+
 public record CreateEntityModel(
     [property: JsonPropertyName("role")] string Role,
     [property: JsonPropertyName("entity_id")] string EntityId,
@@ -129,6 +144,15 @@ public class TrustlistApiClient(HttpClient http)
 
         return await http.GetFromJsonAsync<List<TrustlistEntityModel>>(url) ?? [];
     }
+
+    /// <summary>
+    /// MAS-725 — fetch the top-level directory snapshot: current trustlist version
+    /// (content-hash identifier) plus per-role counts. Cheap call intended for the
+    /// admin index page so it can render "version X — N issuers, M verifiers, K
+    /// wallet providers" without enumerating every entity.
+    /// </summary>
+    public async Task<TrustlistSnapshotModel?> GetSnapshotAsync()
+        => await http.GetFromJsonAsync<TrustlistSnapshotModel>("v1/trustlist");
 
     public async Task<(bool ok, string? error)> CreateAsync(CreateEntityModel model, string token)
     {

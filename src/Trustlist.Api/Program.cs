@@ -198,6 +198,20 @@ builder.Services.AddControllers()
         o.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower));
     });
+
+// MAS-725 — minimal API endpoints (/version, /.well-known/*, /v1/trustlist) use a
+// SEPARATE JSON options pipeline (Microsoft.AspNetCore.Http.Json.JsonOptions) that
+// does NOT inherit from AddJsonOptions above. Apply the same snake_case + enum
+// policy here so minimal-API responses match the MVC controllers' wire format
+// and the v0 spec at openapi-trustlist-directory.yaml.
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(o =>
+{
+    o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    o.SerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower;
+    o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    o.SerializerOptions.Converters.Add(
+        new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower));
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -257,6 +271,22 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "trustlist
 // csproj plus the build SHA when set via the GIT_SHA env var. Convention: every
 // code change bumps the version, see AGENTS.md for the rule.
 app.MapGet("/version", Trustlist.Api.VersionEndpoint.Handler);
+
+// MAS-725 — top-level directory snapshot endpoint. Returns the current
+// trustlist version (content hash of the directory state) and per-role counts
+// so the admin frontend and lightweight callers can pin to a snapshot without
+// having to enumerate every role. Public; same caching posture as /v1/{role}.
+app.MapGet("/v1/trustlist", async (AppDbContext db, CancellationToken ct) =>
+{
+    var version = await Trustlist.Api.TrustlistVersion.ComputeAsync(db, ct);
+    var counts  = await Trustlist.Api.TrustlistVersion.CountAsync(db, ct);
+    return Results.Json(new
+    {
+        trustlist_version = version,
+        version_algorithm = "sha256-trunc12-content",
+        counts,
+    }, contentType: "application/json");
+});
 
 // RFC 7517 JWKS — publishes the TL publisher's public key so Issuers / Wallets /
 // Verifiers can verify signed /v1/{role}/... responses without an out-of-band

@@ -7,6 +7,17 @@
         <span class="hero-eyebrow">Verifiable Credentials · Thailand</span>
         <h1>Trust List Directory</h1>
         <p class="subtitle">Registered Issuers, Verifiers and Wallet Providers in the Thai VC ecosystem.</p>
+        @if (snapshot is not null)
+        {
+            <p class="version-line mono" aria-label="Trustlist version">
+                Trustlist version <code>@snapshot.TrustlistVersion</code>
+                <span class="muted"> · @snapshot.Counts.Issuers issuer@(snapshot.Counts.Issuers == 1 ? "" : "s"), @snapshot.Counts.Verifiers verifier@(snapshot.Counts.Verifiers == 1 ? "" : "s"), @snapshot.Counts.WalletProviders wallet provider@(snapshot.Counts.WalletProviders == 1 ? "" : "s")</span>
+            </p>
+        }
+        else if (snapshotError is not null)
+        {
+            <p class="version-line error">Could not load trustlist version: @snapshotError</p>
+        }
     </div>
 </section>
 
@@ -181,6 +192,12 @@ else
     private string status = "";
     private string search = "";
 
+    // MAS-725 — top-level directory snapshot (trustlist version + per-role counts).
+    // Loaded alongside the entity list; a snapshot fetch failure never blocks the
+    // table render — the version line is the only thing affected.
+    private TrustlistSnapshotModel? snapshot;
+    private string? snapshotError;
+
     // Ids of rows whose key-material detail panel is currently expanded.
     private readonly HashSet<int> expanded = [];
 
@@ -226,7 +243,29 @@ else
         return "—";
     }
 
-    protected override async Task OnInitializedAsync() => await Reload();
+    protected override async Task OnInitializedAsync()
+    {
+        // Snapshot is independent of the entity list — load it in parallel so a slow
+        // /v1/trustlist round-trip does not block the table render. Any failure is
+        // surfaced as `snapshotError` and the table still renders.
+        var snapshotTask = LoadSnapshotAsync();
+        await Reload();
+        await snapshotTask;
+    }
+
+    private async Task LoadSnapshotAsync()
+    {
+        try
+        {
+            snapshot = await Api.GetSnapshotAsync();
+            snapshotError = null;
+        }
+        catch (Exception ex)
+        {
+            snapshot = null;
+            snapshotError = ex.Message;
+        }
+    }
 
     private async Task Reload()
     {
@@ -238,6 +277,10 @@ else
                 string.IsNullOrEmpty(role) ? null : role,
                 string.IsNullOrEmpty(status) ? null : status,
                 string.IsNullOrEmpty(search) ? null : search);
+            // Refresh the snapshot when filters change too — the version is
+            // directory-wide, but a successful reload is the cheapest trigger to
+            // pick up a freshly-published snapshot.
+            await LoadSnapshotAsync();
         }
         catch (Exception ex)
         {
