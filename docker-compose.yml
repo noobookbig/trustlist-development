@@ -25,12 +25,23 @@ services:
     env_file:
       - .env
     environment:
-      ASPNETCORE_ENVIRONMENT: "Production"
+      # MAS-718: run as Development so the API auto-generates an ephemeral
+      # Ed25519 seed when TRUSTLIST_PUBLISHER_PRIVATE_KEY is missing or still
+      # the .env.example placeholder. Production deploys must override this to
+      # "Production" and set TRUSTLIST_PUBLISHER_PRIVATE_KEY / _KID via real
+      # secrets (the API fail-closes at boot if those are missing under
+      # Production — see Program.cs).
+      ASPNETCORE_ENVIRONMENT: ${TRUSTLIST_ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__Default: "Server=db;Database=Trustlist;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=False;"
       Jwt__Key: ${JWT_SIGNING_KEY:?JWT_SIGNING_KEY must be set (>=32 bytes, see .env.example)}
       Jwt__Issuer: ${JWT_ISSUER:-trustlist-api}
       Jwt__Audience: ${JWT_AUDIENCE:-trustlist-web}
       Jwt__ExpiryMinutes: ${JWT_EXPIRY_MINUTES:-120}
+      # MAS-718: defaulted so a clean `cp .env.example .env && docker compose
+      # up --build` works out of the box under Development. In Production the
+      # API itself fail-closes when these are missing or placeholder.
+      TrustlistPublisher__PrivateKeySeedBase64: ${TRUSTLIST_PUBLISHER_PRIVATE_KEY:-}
+      TrustlistPublisher__Kid: ${TRUSTLIST_PUBLISHER_KID:-}
     ports:
       - "8080:8080"
     depends_on:

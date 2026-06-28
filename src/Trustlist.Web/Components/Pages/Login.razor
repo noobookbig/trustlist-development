@@ -4,7 +4,10 @@
 @inject AuthState Auth
 @inject NavigationManager Nav
 
-<h1>@(registerMode ? "Register" : "Login")</h1>
+<section class="hero auth-hero" role="img" aria-label="Ray-traced neon spheres representing the Thai verifiable-credential trust network">
+    <div class="hero-body">
+        <span class="hero-eyebrow">Thailand Trust List</span>
+        <h1>@(registerMode ? "Register" : "Login")</h1>
 
 <div class="card auth-card">
     <label>
@@ -34,6 +37,8 @@
         <p class="hint">Seeded admin: <code>admin@trustlist.local</code> / <code>Admin#12345</code></p>
     }
 </div>
+    </div>
+</section>
 
 @code {
     private string email = "";

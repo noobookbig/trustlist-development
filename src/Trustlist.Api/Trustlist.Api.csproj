@@ -13,6 +13,11 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.8" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.8" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <!-- MAS-696: Ed25519 signer for JWS-compact directory responses.
+         IdentityModel 7.x / 8.x does not expose SecurityAlgorithms.EdDsa or
+         EdDsaSecurityKey; .NET 8 BCL does not ship Ed25519. BouncyCastle is the
+         smallest well-audited dependency for RFC 8032 Ed25519 signing in .NET 8. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
   </ItemGroup>
 
 </Project>
