@@ -1,5 +1,12 @@
 # Trustlist App (C# .NET 8) — local Docker Compose
 
+> **Canonical codebase (read first).** This **C# .NET 8** app — repo
+> `trustlist-development`, worked in the local `development/` folder — is the
+> single source of truth for the Trust List service. The older **TypeScript /
+> pnpm monorepo** (the `…/projects/…/79f5f230-…/_default/` workspace and
+> `vc-conformance-tool`) was a proof-of-concept and is **deprecated — do not use
+> it**. New work, triage, and fixes happen here in C# only.
+
 A locally-runnable **Trust List directory** for the *Verifiable Credential
 Ecosystem In Thailand* project. Built end-to-end in **C# .NET 8**:
 
