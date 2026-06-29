@@ -204,6 +204,17 @@ builder.Services.AddSwaggerGen(o =>
     // MAS-727: document the /v1 directory responses as signed (application/jwt)
     // so Swagger stops implying they are unsigned JSON. Documentation-only.
     o.OperationFilter<Trustlist.Api.Swagger.SignedResponseOperationFilter>();
+
+    // MAS-727 (user request, accepted 2026-06-29): hide the legacy /api/* admin +
+    // auth surface from Swagger UI so the published docs show only the signed
+    // public /v1 directory surface. The endpoints REMAIN fully routable — the
+    // Blazor frontend still calls /api/auth/* and /api/trustlist/* — they are just
+    // not listed in the OpenAPI document. Documentation-only; no runtime change.
+    o.DocInclusionPredicate((_, apiDesc) =>
+    {
+        var path = "/" + (apiDesc.RelativePath ?? string.Empty);
+        return !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
+    });
 });
 
 var app = builder.Build();

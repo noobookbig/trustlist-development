@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Xunit;
 
@@ -53,19 +54,36 @@ public class SwaggerSignedResponseTests : IClassFixture<TrustlistApiFactory>
     }
 
     [Fact]
-    public async Task Swagger_LeavesUnsignedAdminSurface_AsJson()
+    public async Task Swagger_ExcludesLegacyApiSurface()
     {
+        // MAS-727 (user request, accepted 2026-06-29): the legacy /api/* admin +
+        // auth surface must NOT appear in the published Swagger doc — only the
+        // signed public /v1 surface is documented.
         var doc = await GetSwaggerDoc();
-        var content = doc
-            .GetProperty("paths").GetProperty("/api/Trustlist")
-            .GetProperty("get").GetProperty("responses")
-            .GetProperty("200").GetProperty("content");
+        var paths = doc.GetProperty("paths");
 
-        // The legacy /api admin surface is NOT signed; it must stay JSON.
-        Assert.True(content.TryGetProperty("application/json", out _),
-            "Swagger 200 for /api/Trustlist should remain application/json");
-        Assert.False(content.TryGetProperty("application/jwt", out _),
-            "Swagger 200 for /api/Trustlist must NOT be marked application/jwt");
+        foreach (var path in paths.EnumerateObject())
+        {
+            Assert.False(path.Name.StartsWith("/api/", StringComparison.OrdinalIgnoreCase),
+                $"Swagger should not document the legacy admin path {path.Name}");
+        }
+
+        // Sanity: the signed public surface is still documented.
+        Assert.True(paths.TryGetProperty("/v1/issuers", out _),
+            "Swagger should still document the signed /v1 directory surface");
+    }
+
+    [Fact]
+    public async Task LegacyApiSurface_RemainsRoutable_EvenWhenHiddenFromSwagger()
+    {
+        // Hiding /api/* from Swagger must NOT break the endpoints — the Blazor
+        // frontend still depends on them. A bad-credentials login should reach the
+        // controller and return 401 (not 404).
+        using var client = _api.CreateClient();
+        var resp = await client.PostAsJsonAsync("/api/auth/login",
+            new { email = "nobody@example.com", password = "wrong-password" });
+
+        Assert.NotEqual(System.Net.HttpStatusCode.NotFound, resp.StatusCode);
     }
 
     private async Task<JsonElement> GetSwaggerDoc()
