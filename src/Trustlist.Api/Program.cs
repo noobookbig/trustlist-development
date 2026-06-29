@@ -199,7 +199,12 @@ builder.Services.AddControllers()
             new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower));
     });
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(o =>
+{
+    // MAS-727: document the /v1 directory responses as signed (application/jwt)
+    // so Swagger stops implying they are unsigned JSON. Documentation-only.
+    o.OperationFilter<Trustlist.Api.Swagger.SignedResponseOperationFilter>();
+});
 
 var app = builder.Build();
 
