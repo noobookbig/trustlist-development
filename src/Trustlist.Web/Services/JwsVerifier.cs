@@ -36,6 +36,32 @@ public class JwsVerifier
         _cache = cache;
     }
 
+    /// <summary>
+    /// Resolve the publisher <c>kid</c> to verify against. Verifier-grade trust
+    /// pins the kid out-of-band: callers SHOULD pass the operator-configured
+    /// <paramref name="pinnedKid"/>. When no kid is pinned (v0 single-publisher
+    /// deployments) we fall back to the sole key advertised in the JWKS — but we
+    /// refuse to guess when the JWKS advertises more than one key, because then
+    /// "trust the only key" is ambiguous and an attacker who can add a key could
+    /// steer us to the wrong one.
+    /// </summary>
+    public async Task<(string? kid, string? error)> ResolveKidAsync(
+        string? pinnedKid,
+        CancellationToken ct = default)
+    {
+        if (!string.IsNullOrWhiteSpace(pinnedKid)) return (pinnedKid, null);
+
+        var jwks = await _cache.GetAsync(_http, ct);
+        return jwks.Keys.Count switch
+        {
+            1 => (jwks.Keys.Keys.First(), null),
+            0 => (null, "JWKS advertises no keys; cannot establish a trust anchor."),
+            _ => (null,
+                $"JWKS advertises {jwks.Keys.Count} keys and no kid was pinned; " +
+                "refusing to guess. Configure TrustlistPublisher:Kid."),
+        };
+    }
+
     public async Task<JwsVerificationResult> FetchAndVerifyAsync(
         string directoryUrl,
         string expectedKid,

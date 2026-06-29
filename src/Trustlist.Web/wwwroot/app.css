@@ -287,6 +287,17 @@ h1 {
 .small { font-size: var(--text-xs); color: var(--muted); }
 .count { color: var(--muted); font-size: var(--text-sm); }
 
+/* ---------------- Trust / verification banner (MAS-728) ---------------- */
+.verified-banner {
+    display: flex; align-items: center; gap: var(--space-2);
+    color: var(--muted); font-size: var(--text-sm); flex-wrap: wrap;
+}
+.badge.verified {
+    background-color: var(--tint-green-bg, rgba(46, 204, 113, 0.12));
+    color: var(--tint-green-ink, #1f9d55);
+    border-color: rgba(46, 204, 113, 0.45);
+}
+
 /* ---------------- Status / role badges ---------------- */
 .badge {
     display: inline-flex; align-items: center; gap: var(--space-1);
