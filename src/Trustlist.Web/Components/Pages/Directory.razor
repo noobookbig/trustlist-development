@@ -1,6 +1,6 @@
 @page "/"
 @rendermode InteractiveServer
-@inject TrustlistApiClient Api
+@inject VerifiedDirectoryClient DirectoryReader
 
 <section class="hero" role="img" aria-label="Ray-traced neon spheres representing the Thai verifiable-credential trust network">
     <div class="hero-body">
@@ -33,16 +33,36 @@
 {
     <p>Loading…</p>
 }
+else if (!verified)
+{
+    @* MAS-728 — fail closed. The signed /v1 surface could not be cryptographically
+       verified against the published JWKS, so we render NO rows as trusted. *@
+    <p class="error" role="alert">
+        <strong>⚠ Signature could not be verified.</strong>
+        This directory is served as a signed (JWS / EdDSA) surface and the signature
+        did not validate against the published trust-list key. Nothing is shown as
+        trusted. Details: @error
+    </p>
+}
 else if (error is not null)
 {
     <p class="error">Could not load directory: @error</p>
 }
 else if (entities.Count == 0)
 {
-    <p>No entities match the current filters.</p>
+    <p class="verified-banner" role="status">
+        <span class="badge verified">✔ Signature verified</span>
+        No entities match the current filters.
+    </p>
 }
 else
 {
+    <p class="verified-banner" role="status">
+        <span class="badge verified">✔ Signature verified</span>
+        Entities below are cryptographically signed by the trust-list publisher
+        (kid <code class="mono">@verifiedKid</code>) and verified against the published JWKS.
+    </p>
+
     <table class="grid cards">
         <thead>
             <tr>
@@ -177,9 +197,18 @@ else
     private List<TrustlistEntityModel> entities = [];
     private bool loading = true;
     private string? error;
+    // MAS-728 — true only once the JWS over the /v1 surface verified against the
+    // published JWKS. Gates whether any row is rendered as trusted.
+    private bool verified;
+    private string? verifiedKid;
     private string role = "";
     private string status = "";
     private string search = "";
+
+    // MAS-728 — optional initial role filter, used by render tests to scope the
+    // page to a single signed /v1 surface. When set, the page starts on that role
+    // instead of "All roles". No-op for normal navigation (the URL has no params).
+    [Parameter] public string? RoleFilter { get; set; }
 
     // Ids of rows whose key-material detail panel is currently expanded.
     private readonly HashSet<int> expanded = [];
@@ -226,21 +255,43 @@ else
         return "—";
     }
 
-    protected override async Task OnInitializedAsync() => await Reload();
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(RoleFilter)) role = RoleFilter;
+        await Reload();
+    }
 
     private async Task Reload()
     {
         loading = true;
         error = null;
+        verified = false;
+        verifiedKid = null;
         try
         {
-            entities = await Api.ListAsync(
+            // Read the SIGNED /v1 surface and verify the JWS before rendering.
+            var result = await DirectoryReader.GetAsync(
                 string.IsNullOrEmpty(role) ? null : role,
                 string.IsNullOrEmpty(status) ? null : status,
                 string.IsNullOrEmpty(search) ? null : search);
+
+            verified = result.IsVerified;
+            verifiedKid = result.Kid;
+            if (verified)
+            {
+                entities = [.. result.Entities];
+            }
+            else
+            {
+                // Fail closed — surface the verification failure, render no rows.
+                entities = [];
+                error = result.Error;
+            }
         }
         catch (Exception ex)
         {
+            // A transport/parse error is not a verified state either.
+            verified = false;
             error = ex.Message;
             entities = [];
         }

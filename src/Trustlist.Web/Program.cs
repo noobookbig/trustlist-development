@@ -21,6 +21,10 @@ builder.Services.AddHttpClient<JwsVerifier>(client =>
 });
 builder.Services.AddSingleton<JwksCache>();
 
+// MAS-728 — the public Directory page reads the *signed* /v1 surface through
+// this client, which verifies the JWS against the JWKS before returning rows.
+builder.Services.AddScoped<VerifiedDirectoryClient>();
+
 // AuthState is per-circuit (per connected user), so use Scoped.
 builder.Services.AddScoped<AuthState>();
 
