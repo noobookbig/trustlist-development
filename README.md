@@ -62,6 +62,10 @@ cd trustlist-app
 cp .env.example .env
 
 # generate strong values (>=32 bytes for JWT key, >=16 chars for sa password)
+# NOTE: only regenerate MSSQL_SA_PASSWORD on a FRESH setup. If you change it
+# while an old `mssql-data` volume exists, run `scripts/dev-db.sh reset` first
+# (or `docker compose down -v`) — otherwise the db rejects the new password and
+# you get "dependency db failed to start" (see Troubleshooting below).
 sed -i "s|^MSSQL_SA_PASSWORD=.*|MSSQL_SA_PASSWORD=$(openssl rand -base64 24)|"   .env
 sed -i "s|^JWT_SIGNING_KEY=.*|JWT_SIGNING_KEY=$(openssl rand -base64 48)|"       .env
 
@@ -89,6 +93,39 @@ logged warning.
 The DB has a healthcheck; the API waits for it, applies EF migrations and seeds
 data on startup. First boot pulls the MS SQL image (~1.5 GB) and may take a
 couple of minutes.
+
+### Troubleshooting: "dependency db failed to start" (MAS-726)
+
+If `docker compose up` fails with a terse message like
+`dependency failed to start: container trustlist-db is unhealthy`, the cause is
+almost always a **stale DB volume / sa-password mismatch**:
+
+> MS SQL Server only applies `MSSQL_SA_PASSWORD` the **first** time the
+> `mssql-data` volume is initialised. If you later regenerate
+> `MSSQL_SA_PASSWORD` in `.env` (the quick-start above does exactly that with
+> `openssl rand`) while an old volume still exists, the server keeps the **old**
+> password. The healthcheck then logs in with the **new** password, gets
+> `Login failed for user 'sa'`, never goes healthy, and the `api` service
+> (which waits on `condition: service_healthy`) refuses to start.
+
+Diagnose and recover with the helper script:
+
+```bash
+scripts/dev-db.sh check    # diagnose: does the running db accept the .env sa password?
+scripts/dev-db.sh reset    # recreate the db volume so it re-inits with the current .env password (DESTROYS local dev data)
+scripts/dev-db.sh up       # guarded compose up: checks readiness and fails LOUD with guidance if the password is stale
+```
+
+Equivalent manual recovery:
+
+```bash
+docker compose down -v      # drop the stale volume (wipes local dev data)
+docker compose up -d --build
+```
+
+Rule of thumb: **if you regenerate `MSSQL_SA_PASSWORD`, you must also reset the
+volume** (`scripts/dev-db.sh reset`), otherwise the persisted DB still expects
+the old password.
 
 ### Updating after code changes (important)
 
